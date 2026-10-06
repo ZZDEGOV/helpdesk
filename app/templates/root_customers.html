@@ -1,0 +1,34 @@
+{% extends "base.html" %}{% set nav='root' %}
+{% block title %}All customers — Root{% endblock %}{% block content %}
+<div class="crumb"><a href="/root">Root</a> / All customers</div>
+<h1>All customers</h1>
+<div class="err" style="margin:12px 0">Read-only. Deletion is <strong>immediate and
+  permanent</strong>, and <strong>removes every ticket belonging to that customer</strong>.</div>
+
+<form class="filters" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search name, email, phone…">
+  <button class="btn">Search</button>{% if q %}<a class="btn" href="/root/customers">Clear</a>{% endif %}
+</form>
+
+<div class="panel">
+{% if customers %}
+<table><thead><tr>
+  <th>Name</th><th>Email</th><th>Phone</th><th style="width:80px">Tickets</th>
+  <th style="width:80px">Open</th><th style="width:120px"></th></tr></thead><tbody>
+{% for c in customers %}
+<tr class="{{ 'voidrow' if c.deleted_at }}">
+  <td>{{ c.name or '(no name)' }}
+    {% if c.deleted_at %}<span class="sub">queued for deletion {{ c.deleted_at | relative }}</span>{% endif %}</td>
+  <td class="mono">{{ c.email or '—' }}</td>
+  <td class="mono">{{ c.phone or '—' }}</td>
+  <td class="mono">{{ c.ticket_count }}</td>
+  <td class="mono">{{ c.open_count or 0 }}</td>
+  <td><form method="post" action="/root/customers/{{ c.id }}/delete"
+        data-confirm="Permanently delete this customer AND their {{ c.ticket_count }} ticket(s)? This cannot be undone.">
+      <button class="btn btn-sm btn-d">Delete now</button></form></td>
+</tr>
+{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><h3>No customers</h3></div>{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends "base.html" %}{% import "_macros.html" as m %}{% set nav='trash' %}
+{% block title %}Trash — Help Desk{% endblock %}{% block content %}
+<h1>Trash</h1>
+<p class="hint" style="margin-bottom:16px">Queued deletions. Removed permanently
+  {{ config.RETENTION_DAYS }} days after being queued, and restorable until then.
+  Deleting a customer takes their tickets with them.</p>
+
+<div class="panel"><div class="panel-h">Tickets</div>
+{% if d.tickets %}
+<table><thead><tr><th style="width:104px">Ref</th><th>Subject</th>
+  <th style="width:150px">Deleted</th><th style="width:210px"></th></tr></thead><tbody>
+{% for t in d.tickets %}
+<tr><td class="ref">{{ t.ref }}</td>
+  <td>{{ t.subject }}<span class="sub"> {{ t.customer_name or t.customer_email or '' }}</span></td>
+  <td class="sub mono">{{ t.deleted_at | relative }}</td>
+  <td class="row">
+    <form method="post" action="/tickets/{{ t.id }}/restore"><button class="btn btn-sm">Restore</button></form>
+    {% if can(current_user(request), 'hard_delete') %}
+    <form method="post" action="/root/tickets/{{ t.id }}/delete"
+          data-confirm="Permanently delete {{ t.ref }}? This cannot be undone.">
+      <button class="btn btn-sm btn-d">Delete now</button></form>
+    {% endif %}
+  </td></tr>
+{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><p>No deleted tickets.</p></div>{% endif %}
+</div>
+
+<div class="panel"><div class="panel-h">Customers</div>
+{% if d.customers %}
+<table><thead><tr><th>Name</th><th>Email</th><th style="width:150px">Deleted</th>
+  <th style="width:210px"></th></tr></thead><tbody>
+{% for c in d.customers %}
+<tr><td>{{ c.name or '(no name)' }}</td><td class="mono">{{ c.email or '—' }}</td>
+  <td class="sub mono">{{ c.deleted_at | relative }}</td>
+  <td class="row">
+    <form method="post" action="/customers/{{ c.id }}/restore"><button class="btn btn-sm">Restore</button></form>
+    {% if can(current_user(request), 'hard_delete') %}
+    <form method="post" action="/root/customers/{{ c.id }}/delete"
+          data-confirm="Permanently delete this customer AND all their tickets?">
+      <button class="btn btn-sm btn-d">Delete now</button></form>
+    {% endif %}
+  </td></tr>
+{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><p>No deleted customers.</p></div>{% endif %}
+</div>
+{% endblock %}

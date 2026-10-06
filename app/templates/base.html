@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}Help Desk{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">HELP<span>DESK</span></a>
+  {% set me = current_user(request) %}
+  <nav class="nav">
+    {% if me %}
+      {% if me.role == 'root' %}
+        <a href="/root" class="{{ 'on' if nav=='root' }}">Root</a>
+        <a href="/root/users">Accounts</a>
+        <a href="/root/tickets">All tickets</a>
+        <a href="/root/customers">All customers</a>
+        <a href="/" class="{{ 'on' if nav=='tickets' }}">Tickets (read-only)</a>
+      {% else %}
+        <a href="/" class="{{ 'on' if nav=='tickets' }}">Tickets</a>
+        <a href="/customers" class="{{ 'on' if nav=='customers' }}">Customers</a>
+        <a href="/templates" class="{{ 'on' if nav=='templates' }}">Replies</a>
+        {% if can(me, 'view_trash') %}<a href="/trash" class="{{ 'on' if nav=='trash' }}">Trash</a>{% endif %}
+        <a href="/tickets/new" class="{{ 'on' if nav=='new' }}">+ New ticket</a>
+      {% endif %}
+      <a href="/change-password" class="who">{{ me.username }}</a>
+      <form method="post" action="/logout" style="display:inline"><button>Sign out</button></form>
+    {% endif %}
+  </nav>
+</header>
+<main class="wrap">{% block content %}{% endblock %}</main>
+<script>
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-copy]');
+  if (!b) return;
+  const src = document.querySelector(b.dataset.copy);
+  if (!src) return;
+  navigator.clipboard.writeText(src.value ?? src.textContent).then(() => {
+    const old = b.textContent; b.textContent = 'Copied'; b.classList.add('copied');
+    setTimeout(() => { b.textContent = old; b.classList.remove('copied'); }, 1400);
+  });
+});
+document.addEventListener('submit', e => {
+  const f = e.target.closest('[data-confirm]');
+  if (f && !confirm(f.dataset.confirm)) e.preventDefault();
+});
+document.addEventListener('keydown', e => {
+  if (e.target.matches('input,textarea,select')) return;
+  if (e.key === 'n') { e.preventDefault(); location.href = '/tickets/new'; }
+  if (e.key === '/') { e.preventDefault();
+    const s = document.querySelector('input[type=search]'); if (s) s.focus(); }
+});
+</script>
+</body>
+</html>

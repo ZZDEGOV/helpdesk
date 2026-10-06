@@ -1,0 +1,48 @@
+{% extends "base.html" %}{% set nav='tickets' %}
+{% block title %}Import thread — {{ t.ref }}{% endblock %}{% block content %}
+<div class="crumb"><a href="/tickets/{{ t.id }}">{{ t.ref }}</a> / Import thread</div>
+<h1>Review before saving</h1>
+<p class="hint" style="margin-bottom:16px">
+  {{ segments|length }} message{{ 's' if segments|length != 1 }} found. Kinds and times are
+  guesses — correct anything wrong, untick what you don't want, then save. Nothing is
+  stored until you do.</p>
+
+{% if segments %}
+<form method="post" action="/tickets/{{ t.id }}/import/confirm">
+{% for s in segments %}
+<div class="panel">
+  <div class="panel-h">
+    <label style="display:flex;gap:7px;align-items:center;text-transform:none;letter-spacing:0">
+      <input type="checkbox" name="include_{{ loop.index0 }}" value="1" checked style="width:auto">
+      Message {{ loop.index }}</label>
+    {% if not s.sent_at %}<span class="right pill s-waiting_customer">No date found</span>{% endif %}
+  </div>
+  <div class="panel-b">
+    <div class="row" style="margin-bottom:9px">
+      <select name="kind_{{ loop.index0 }}" style="flex:1">
+        {% for key, (label, dirn, party) in config.MESSAGE_KINDS.items() %}
+        <option value="{{ key }}" {{ 'selected' if key == s.guessed_kind }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <input name="author_{{ loop.index0 }}" value="{{ s.author }}" placeholder="Who" style="flex:1">
+      <input name="when_{{ loop.index0 }}" type="datetime-local"
+             value="{{ s.sent_at.strftime('%Y-%m-%dT%H:%M') if s.sent_at else '' }}">
+    </div>
+    {% if s.sent_raw and not s.sent_at %}
+    <p class="hint" style="margin-bottom:7px">Couldn't parse "{{ s.sent_raw }}" — set it manually.</p>
+    {% endif %}
+    <textarea name="body_{{ loop.index0 }}" rows="{{ 4 if s.body|length < 300 else 8 }}">{{ s.body }}</textarea>
+  </div>
+</div>
+{% endfor %}
+<div class="row">
+  <button class="btn btn-p">Save selected entries</button>
+  <a class="btn" href="/tickets/{{ t.id }}">Cancel</a>
+</div>
+</form>
+{% else %}
+<div class="panel"><div class="empty"><h3>Nothing to split</h3>
+  <p>No message boundaries found. Paste it as a single entry instead.</p>
+  <a class="btn" href="/tickets/{{ t.id }}">Back to ticket</a></div></div>
+{% endif %}
+{% endblock %}

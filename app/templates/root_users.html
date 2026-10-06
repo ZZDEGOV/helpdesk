@@ -1,0 +1,70 @@
+{% extends "base.html" %}{% set nav='root' %}
+{% block title %}Accounts — Help Desk{% endblock %}{% block content %}
+<div class="crumb"><a href="/root">Root</a> / Accounts</div>
+<h1>Accounts</h1>
+{% if error %}<div class="err" style="margin:12px 0">{{ error }}</div>{% endif %}
+
+<div class="grid">
+<div>
+{% for u in users %}
+<div class="panel"><div class="panel-h">{{ u.username }}
+  <span class="pill {{ 's-resolved' if u.role=='root' else ('s-new' if u.role=='admin' else 's-closed') }}">{{ u.role }}</span>
+  {% if not u.is_active %}<span class="pill s-closed">disabled</span>{% endif %}
+  {% if not u.password_hash %}<span class="pill s-waiting_customer">no password</span>{% endif %}
+</div><div class="panel-b">
+  <form method="post" action="/root/users/{{ u.id }}/update">
+    <div class="cols">
+      <div class="field"><label class="f">Display name</label>
+        <input name="display_name" value="{{ u.display_name or '' }}"></div>
+      <div class="field"><label class="f">Role</label>
+        <select name="role">{% for r in config.ROLES %}
+          <option value="{{ r }}" {{ 'selected' if r==u.role }}>{{ config.ROLE_LABELS[r] }}</option>
+        {% endfor %}</select></div>
+    </div>
+    <label style="font-size:13px;display:flex;gap:7px;align-items:center;margin-bottom:11px">
+      <input type="checkbox" name="is_active" value="1" {{ 'checked' if u.is_active }} style="width:auto">
+      Account enabled</label>
+    <button class="btn btn-sm">Save</button>
+  </form>
+  <form method="post" action="/root/users/{{ u.id }}/password" class="row" style="margin-top:11px"
+        data-confirm="Reset this password? It signs them out and forces a change at next login.">
+    <input name="password" type="password" placeholder="New temporary password"
+           minlength="8" required style="flex:1">
+    <button class="btn btn-sm btn-d">Reset password</button>
+  </form>
+  <form method="post" action="/root/users/{{ u.id }}/delete" class="row" style="margin-top:11px"
+        data-confirm="Permanently delete {{ u.username }}? This cannot be undone.">
+    <select name="reassign_to" style="flex:1">
+      <option value="">Leave their tickets unowned</option>
+      {% for o in users if o.id != u.id and o.role != 'root' %}
+      <option value="{{ o.id }}">Reassign their tickets to {{ o.username }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-sm btn-d">Delete account</button>
+  </form>
+  <p class="hint">{% if u.last_login_at %}Last signed in {{ u.last_login_at | relative }}.
+    {% else %}Never signed in.{% endif %}
+    {% if u.locked_until %} Locked until {{ u.locked_until | dt }}.{% endif %}</p>
+</div></div>
+{% endfor %}
+</div>
+
+<div><div class="panel"><div class="panel-h">New account</div><div class="panel-b">
+  <form method="post" action="/root/users/create">
+    <div class="field"><label class="f" for="username">Username</label>
+      <input id="username" name="username" required autocapitalize="off"></div>
+    <div class="field"><label class="f" for="display_name">Display name</label>
+      <input id="display_name" name="display_name"></div>
+    <div class="field"><label class="f" for="role">Role</label>
+      <select id="role" name="role">{% for r in config.ROLES %}
+        <option value="{{ r }}" {{ 'selected' if r=='user' }}>{{ config.ROLE_LABELS[r] }}</option>
+      {% endfor %}</select></div>
+    <div class="field"><label class="f" for="password">Temporary password</label>
+      <input id="password" type="password" name="password" required minlength="8"></div>
+    <button class="btn btn-p" style="width:100%">Create account</button>
+  </form>
+  <p class="hint">They'll be forced to choose their own password at first sign-in, so
+    this one stops working immediately after.</p>
+</div></div></div>
+</div>
+{% endblock %}

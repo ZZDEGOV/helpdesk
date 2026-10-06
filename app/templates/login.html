@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block title %}Sign in — Help Desk{% endblock %}
+{% block content %}
+<div class="login">
+  <h1>Sign in</h1>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <form method="post" action="/login">
+    <div class="field"><label class="f" for="username">Username</label>
+      <input id="username" name="username" required autofocus autocapitalize="off"></div>
+    <div class="field"><label class="f" for="password">Password</label>
+      <input id="password" type="password" name="password" required></div>
+    <button class="btn btn-p" style="width:100%">Sign in</button>
+  </form>
+</div>
+{% endblock %}

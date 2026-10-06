@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% set nav='root' %}
+{% block title %}Audit log{% endblock %}{% block content %}
+<div class="crumb"><a href="/root">Root</a> / Audit log</div>
+<h1>Audit log</h1>
+<div class="panel"><table><thead><tr>
+  <th style="width:160px">When</th><th style="width:130px">User</th>
+  <th style="width:150px">Action</th><th>Detail</th></tr></thead><tbody>
+{% for a in audit %}
+<tr><td class="mono sub nowrap">{{ a.created_at | dt }}</td>
+  <td class="mono">{{ a.username or '—' }}</td>
+  <td>{{ a.action.replace('_',' ') }}</td>
+  <td class="sub">{{ a.target }} {{ a.detail }}</td></tr>
+{% else %}<tr><td colspan="4" class="sub" style="padding:20px">Nothing recorded yet.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

@@ -1,0 +1,74 @@
+{% extends "base.html" %}{% set nav='new' %}
+{% block title %}New ticket — Help Desk{% endblock %}{% block content %}
+<div class="crumb"><a href="/">Tickets</a> / New</div>
+<h1>New ticket</h1>
+<p class="hint" style="margin-bottom:16px">Only the subject is required. Everything else can be filled in later.</p>
+
+<form method="post" action="/tickets/new">
+<div class="grid">
+  <div>
+    <div class="panel"><div class="panel-h">Issue</div><div class="panel-b">
+      <div class="field"><label class="f" for="subject">Subject</label>
+        <input id="subject" name="subject" required autofocus
+               placeholder="e.g. DART Pass receipt email not arriving"></div>
+      <div class="field"><label class="f" for="body">Details</label>
+        <textarea id="body" name="body" rows="9"
+          placeholder="What the customer reported, in their words where possible."></textarea></div>
+      <div class="cols">
+        <div class="field"><label class="f" for="category">Category</label>
+          <select id="category" name="category"><option value="">—</option>
+            {% for c in categories %}<option>{{ c }}</option>{% endfor %}</select></div>
+        <div class="field"><label class="f" for="subcategory">Subcategory</label>
+          <input id="subcategory" name="subcategory" placeholder="e.g. DART Pass (Bytemark)"></div>
+      </div>
+    </div></div>
+
+    <div class="panel"><div class="panel-h">Customer</div><div class="panel-b">
+      <div class="cols">
+        <div class="field"><label class="f" for="customer_name">Name</label>
+          <input id="customer_name" name="customer_name"></div>
+        <div class="field"><label class="f" for="customer_email">Email</label>
+          <input id="customer_email" name="customer_email" type="email"></div>
+      </div>
+      <div class="cols">
+        <div class="field"><label class="f" for="customer_phone">Phone</label>
+          <input id="customer_phone" name="customer_phone"></div>
+        <div class="field"><label class="f" for="account_id">Account ID</label>
+          <input id="account_id" name="account_id"></div>
+      </div>
+      <div class="field"><label class="f" for="city">City</label>
+        <input id="city" name="city"></div>
+      <p class="hint">Matched on email — reuse the same address and their history links up automatically.</p>
+    </div></div>
+  </div>
+
+  <div>
+    <div class="panel"><div class="panel-h">Classification</div><div class="panel-b">
+      <div class="field"><label class="f" for="channel">Channel</label>
+        <select id="channel" name="channel">
+          {% for c in config.CHANNELS %}
+          <option value="{{ c }}" {{ 'selected' if c=='unknown' }}>{{ config.CHANNEL_LABELS[c] }}</option>
+          {% endfor %}</select></div>
+      <div class="field"><label class="f" for="priority">Priority</label>
+        <select id="priority" name="priority">
+          {% for p in [1,2,3,4,5] %}
+          <option value="{{ p }}" {{ 'selected' if p==3 }}>{{ config.PRIORITY_LABELS[p] }}</option>
+          {% endfor %}</select></div>
+      <div class="field"><label class="f" for="received_at">Received</label>
+        <input id="received_at" name="received_at" type="datetime-local">
+        <p class="hint">Leave blank for now.</p></div>
+      <div class="field"><label class="f" for="due_at">Target date</label>
+        <input id="due_at" name="due_at" type="date"></div>
+      <div class="field"><label class="f" for="logged_by">Logged by</label>
+        <input id="logged_by" name="logged_by" placeholder="CSR username, if forwarded"></div>
+      <div class="field"><label class="f" for="tags">Tags</label>
+        <input id="tags" name="tags" placeholder="comma, separated"></div>
+      <div class="field"><label style="font-size:13px;display:flex;gap:7px;align-items:center">
+        <input type="checkbox" name="ada" value="1" style="width:auto">ADA-related</label></div>
+    </div></div>
+    <button class="btn btn-p" style="width:100%">Create ticket</button>
+    <a class="btn" style="width:100%;text-align:center;margin-top:7px" href="/">Cancel</a>
+  </div>
+</div>
+</form>
+{% endblock %}

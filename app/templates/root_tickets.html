@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% import "_macros.html" as m %}{% set nav='root' %}
+{% block title %}All tickets — Root{% endblock %}{% block content %}
+<div class="crumb"><a href="/root">Root</a> / All tickets</div>
+<h1>All tickets</h1>
+<div class="err" style="margin:12px 0">Deletion here is <strong>immediate and
+  permanent</strong> — no trash, no recovery. For everyday removal an admin should
+  queue it instead.</div>
+
+<form class="filters" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search ref, subject, customer…">
+  <button class="btn">Search</button>{% if q %}<a class="btn" href="/root/tickets">Clear</a>{% endif %}
+</form>
+
+<div class="panel">
+{% if tickets %}
+<table><thead><tr>
+  <th style="width:104px">Ref</th><th>Subject</th><th style="width:120px">Owner</th>
+  <th style="width:130px">Status</th><th style="width:110px">Created</th>
+  <th style="width:120px"></th></tr></thead><tbody>
+{% for t in tickets %}
+<tr class="{{ 'voidrow' if t.deleted_at }}">
+  <td><a class="ref" href="/tickets/{{ t.id }}">{{ t.ref }}</a></td>
+  <td>{{ t.subject }}
+    <span class="sub">{{ t.customer_name or t.customer_email or 'no customer' }}
+      {%- if t.deleted_at %} · queued for deletion {{ t.deleted_at | relative }}{% endif %}</span></td>
+  <td class="sub mono">{{ t.owner_username or '—' }}</td>
+  <td>{{ m.status_pill(t.status) }}</td>
+  <td class="sub mono nowrap">{{ t.created_at | date }}</td>
+  <td><form method="post" action="/root/tickets/{{ t.id }}/delete"
+        data-confirm="Permanently delete {{ t.ref }}? This cannot be undone.">
+      <button class="btn btn-sm btn-d">Delete now</button></form></td>
+</tr>
+{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><h3>No tickets</h3></div>{% endif %}
+</div>
+{% endblock %}

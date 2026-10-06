@@ -1,0 +1,125 @@
+{% extends "base.html" %}{% import "_macros.html" as m %}{% set nav='customers' %}
+{% block title %}{{ c.name or c.email }} — Help Desk{% endblock %}{% block content %}
+<div class="crumb"><a href="/customers">Customers</a> / {{ c.name or c.email }}</div>
+<h1>{{ c.name or '(no name)' }}</h1>
+<div class="grid">
+<div><div class="panel"><div class="panel-h">Ticket history</div>
+{% if tickets %}
+<table><thead><tr><th style="width:104px">Ref</th><th>Subject</th>
+  <th style="width:120px">Status</th><th style="width:110px">Opened</th></tr></thead><tbody>
+{% for t in tickets %}
+<tr><td><a class="ref" href="/tickets/{{ t.id }}">{{ t.ref }}</a></td>
+  <td><a class="subj" href="/tickets/{{ t.id }}">{{ t.subject }}</a>
+    <span class="sub">{{ t.category or 'Uncategorized' }}</span></td>
+  <td>{{ m.status_pill(t.status) }}</td>
+  <td class="mono sub">{{ t.received_at | date }}</td></tr>
+{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><p>No tickets.</p></div>{% endif %}
+</div></div>
+<div>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+  <div class="panel"><div class="panel-h">Details</div><div class="panel-b">
+    <form method="post" action="/customers/{{ c.id }}/edit">
+      <div class="field"><label class="f" for="name">Name</label>
+        <input id="name" name="name" value="{{ c.name or '' }}"></div>
+      <div class="field"><label class="f" for="account_id">Account ID</label>
+        <input id="account_id" name="account_id" value="{{ c.account_id or '' }}"></div>
+      <div class="field"><label class="f" for="address">Address</label>
+        <input id="address" name="address" value="{{ c.address or '' }}"></div>
+      <div class="cols">
+        <div class="field"><label class="f" for="city">City</label>
+          <input id="city" name="city" value="{{ c.city or '' }}"></div>
+        <div class="field"><label class="f" for="zip">ZIP</label>
+          <input id="zip" name="zip" value="{{ c.zip or '' }}"></div>
+      </div>
+      <button class="btn btn-p btn-sm" style="width:100%">Save details</button>
+    </form>
+    <p class="hint">First seen {{ c.created_at | date }}</p>
+  </div></div>
+
+  <div class="panel"><div class="panel-h">Email addresses</div><div class="panel-b">
+    {% for e in emails %}
+    <div class="row" style="margin-bottom:5px">
+      <span class="mono" style="flex:1">{{ e.email }}</span>
+      {% if e.is_primary %}<span class="pill s-new">primary</span>
+      {% else %}
+        <form method="post" action="/customers/{{ c.id }}/contacts" style="display:inline">
+          <input type="hidden" name="action" value="primary_email">
+          <input type="hidden" name="value" value="{{ e.email }}">
+          <button class="linkbtn">make primary</button></form>
+        <form method="post" action="/customers/{{ c.id }}/contacts" style="display:inline">
+          <input type="hidden" name="action" value="remove_email">
+          <input type="hidden" name="value" value="{{ e.email }}">
+          <button class="linkbtn">remove</button></form>
+      {% endif %}
+    </div>
+    {% else %}<p class="sub">None on file.</p>{% endfor %}
+    <form method="post" action="/customers/{{ c.id }}/contacts" class="row" style="margin-top:9px">
+      <input type="hidden" name="action" value="add_email">
+      <input name="value" type="email" placeholder="Add another address" style="flex:1" required>
+      <button class="btn btn-sm">Add</button>
+    </form>
+  </div></div>
+
+  <div class="panel"><div class="panel-h">Phone numbers</div><div class="panel-b">
+    {% for ph in phones %}
+    <div class="row" style="margin-bottom:5px">
+      <span class="mono" style="flex:1">{{ ph.phone }}{% if ph.label %} <span class="sub">{{ ph.label }}</span>{% endif %}</span>
+      {% if ph.is_primary %}<span class="pill s-new">primary</span>
+      {% else %}
+        <form method="post" action="/customers/{{ c.id }}/contacts" style="display:inline">
+          <input type="hidden" name="action" value="primary_phone">
+          <input type="hidden" name="value" value="{{ ph.phone }}">
+          <button class="linkbtn">make primary</button></form>
+      {% endif %}
+      <form method="post" action="/customers/{{ c.id }}/contacts" style="display:inline">
+        <input type="hidden" name="action" value="remove_phone">
+        <input type="hidden" name="value" value="{{ ph.phone }}">
+        <button class="linkbtn">remove</button></form>
+    </div>
+    {% else %}<p class="sub">None on file.</p>{% endfor %}
+    <form method="post" action="/customers/{{ c.id }}/contacts" class="row" style="margin-top:9px">
+      <input type="hidden" name="action" value="add_phone">
+      <input name="value" placeholder="Number" style="flex:1" required>
+      <input name="label" placeholder="Label" style="width:80px">
+      <button class="btn btn-sm">Add</button>
+    </form>
+  </div></div>
+  <div class="panel"><div class="panel-h">Notes</div><div class="panel-b">
+    <form method="post" action="/customers/{{ c.id }}/notes">
+      <textarea name="notes" rows="5"
+        placeholder="Context worth remembering next time.">{{ c.notes or '' }}</textarea>
+      <button class="btn btn-sm" style="margin-top:8px">Save notes</button>
+    </form>
+  </div></div>
+
+  <div class="panel"><div class="panel-h">Merge into another customer</div><div class="panel-b">
+    <p class="hint" style="margin-bottom:9px">Moves every ticket and contact from this
+      record into the one you pick, then removes this one.</p>
+    <form method="post" action="/customers/{{ c.id }}/merge"
+          data-confirm="Merge this customer into the selected one? This cannot be undone.">
+      <div class="field">
+        <select name="target_id" required>
+          <option value="">Choose the record to keep…</option>
+          {% for o in others %}
+          <option value="{{ o.id }}">{{ o.name or '(no name)' }} — {{ o.email or 'no email' }}</option>
+          {% endfor %}
+        </select></div>
+      <button class="btn btn-sm" style="width:100%">Merge</button>
+    </form>
+  </div></div>
+
+  {% if can(current_user(request), 'soft_delete') %}
+  <div class="panel danger"><div class="panel-h">Delete customer</div><div class="panel-b">
+    <form method="post" action="/customers/{{ c.id }}/delete"
+          data-confirm="Queue this customer and their {{ tickets|length }} ticket(s) for deletion?">
+      <button class="btn btn-d btn-sm" style="width:100%">Queue for deletion</button>
+    </form>
+    <p class="hint">Their tickets go too. Restorable for {{ config.RETENTION_DAYS }} days,
+      then removed permanently.</p>
+  </div></div>
+  {% endif %}
+</div></div>
+{% endblock %}

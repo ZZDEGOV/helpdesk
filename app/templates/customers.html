@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% set nav='customers' %}
+{% block title %}Customers — Help Desk{% endblock %}{% block content %}
+<h1>Customers</h1>
+<p class="hint" style="margin-bottom:14px">Created automatically whenever you log a ticket with an email address.</p>
+<form class="filters" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search name, email, phone, account…">
+  <button class="btn">Search</button>{% if q %}<a class="btn" href="/customers">Clear</a>{% endif %}
+</form>
+<div class="panel">
+{% if customers %}
+<table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th style="width:90px">Tickets</th>
+  <th style="width:80px">Open</th></tr></thead><tbody>
+{% for c in customers %}
+<tr><td><a href="/customers/{{ c.id }}">{{ c.name or '(no name)' }}</a>
+      {% if c.notes %}<br><span class="sub">{{ c.notes|truncate(48) }}</span>{% endif %}</td>
+  <td class="mono">{{ c.email or '—' }}</td><td class="mono">{{ c.phone or '—' }}</td>
+  <td class="mono">{{ c.ticket_count }}</td>
+  <td class="mono" style="{{ 'color:var(--red);font-weight:600' if c.open_count }}">{{ c.open_count or 0 }}</td></tr>
+{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><h3>No customers yet</h3>
+  <p>They appear here as soon as you log a ticket with an email address.</p></div>{% endif %}
+</div>
+{% endblock %}

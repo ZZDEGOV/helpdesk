@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% block title %}Set up — Help Desk{% endblock %}
+{% block content %}
+<div class="login">
+  <h1>First-time setup</h1>
+  <p class="hint" style="margin-bottom:16px">Create the root account. Root manages
+    accounts and sees analytics; it can read tickets but not change them. You'll want a
+    separate account for your own ticket work.</p>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <form method="post" action="/setup">
+    <div class="field"><label class="f" for="username">Root username</label>
+      <input id="username" name="username" value="root" required autofocus></div>
+    <div class="field"><label class="f" for="display_name">Display name</label>
+      <input id="display_name" name="display_name" placeholder="Optional"></div>
+    <div class="field"><label class="f" for="password">Password</label>
+      <input id="password" type="password" name="password" required minlength="8"></div>
+    <div class="field"><label class="f" for="confirm">Confirm password</label>
+      <input id="confirm" type="password" name="confirm" required minlength="8"></div>
+    <button class="btn btn-p" style="width:100%">Create root account</button>
+  </form>
+  <p class="hint" style="margin-top:13px">There's no email recovery — if you lose this
+    password it can only be reset by editing the database directly. Store it somewhere.</p>
+</div>
+{% endblock %}

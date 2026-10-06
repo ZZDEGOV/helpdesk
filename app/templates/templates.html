@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% set nav='templates' %}
+{% block title %}Saved replies — Help Desk{% endblock %}{% block content %}
+<h1>Saved replies</h1>
+<p class="hint" style="margin-bottom:14px">Placeholders filled from the ticket:
+  <code class="mono">{{ '{{first_name}}' }}</code>,
+  <code class="mono">{{ '{{full_name}}' }}</code>,
+  <code class="mono">{{ '{{ref}}' }}</code>,
+  <code class="mono">{{ '{{subject}}' }}</code>,
+  <code class="mono">{{ '{{due_date}}' }}</code>,
+  <code class="mono">{{ '{{owner}}' }}</code></p>
+<div class="grid">
+<div>
+{% for tpl in items %}
+<div class="panel"><div class="panel-h">{{ tpl.name }}
+  <span class="right row">
+    <a class="btn btn-sm" href="/templates?edit={{ tpl.id }}">Edit</a>
+    <form method="post" action="/templates/{{ tpl.id }}/delete" data-confirm="Delete this reply?">
+      <button class="btn btn-sm btn-d">Delete</button></form>
+  </span></div>
+  <div class="panel-b"><div class="body-text" id="tpl{{ tpl.id }}">{{ tpl.body }}</div>
+    <button class="btn btn-sm" style="margin-top:9px" data-copy="#tpl{{ tpl.id }}">Copy</button></div>
+</div>
+{% else %}<div class="panel"><div class="empty"><h3>No saved replies</h3>
+  <p>Add the ones you retype most often.</p></div></div>{% endfor %}
+</div>
+<div><div class="panel">
+  <div class="panel-h">{{ 'Edit reply' if editing else 'New reply' }}</div><div class="panel-b">
+  <form method="post" action="/templates/save">
+    <input type="hidden" name="template_id" value="{{ editing.id if editing else '' }}">
+    <div class="field"><label class="f" for="name">Name</label>
+      <input id="name" name="name" required value="{{ editing.name if editing else '' }}"></div>
+    <div class="field"><label class="f" for="category">Category</label>
+      <input id="category" name="category" value="{{ editing.category if editing else '' }}"></div>
+    <div class="field"><label class="f" for="body">Body</label>
+      <textarea id="body" name="body" rows="12" required>{{ editing.body if editing else '' }}</textarea></div>
+    <button class="btn btn-p" style="width:100%">Save reply</button>
+    {% if editing %}<a class="btn" style="width:100%;text-align:center;margin-top:7px" href="/templates">Cancel</a>{% endif %}
+  </form>
+</div></div></div>
+</div>
+{% endblock %}

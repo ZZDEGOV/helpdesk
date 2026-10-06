@@ -1,0 +1,24 @@
+{% macro status_pill(s) %}<span class="pill s-{{ s }}">{{ config.STATUS_LABELS[s] }}</span>{% endmacro %}
+
+{% macro prio_pill(p) %}<span class="pill p{{ p }}">P{{ p }}</span>{% endmacro %}
+
+{#- Route-line SLA bar: filled portion is accrued *active* time against the
+    target date. Greys out when the clock is paused. -#}
+{% macro sla(t, show_label=True) %}
+  {% set secs = live_seconds(t) %}
+  {% if t.due_at and t.status in config.OPEN_STATUSES %}
+    {% set over = is_overdue(t) %}
+    {% set pct = 100 if over else ((secs / 172800.0 * 100) | round | int) %}
+    {% set pct = 100 if pct > 100 else pct %}
+    {% set cls = 'over' if over else ('warn' if pct >= 70 else '') %}
+    {% set cls = cls ~ (' paused' if t.status not in config.ACTIVE_STATUSES else '') %}
+    <span class="sla {{ cls }}" style="--pct:{{ pct }}%"
+          title="Active time {{ secs | duration }} · due {{ t.due_at | dt }}">
+      {% if show_label %}<span class="lab">{{ secs | duration }}{% if over %} · overdue{% endif %}</span>{% endif %}
+      <span class="track"></span><span class="fill"></span>
+      <span class="cap"></span><span class="stop"></span>
+    </span>
+  {% else %}
+    <span class="sla-legend" title="Active working time">{{ secs | duration }}</span>
+  {% endif %}
+{% endmacro %}

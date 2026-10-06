@@ -1,0 +1,236 @@
+{% extends "base.html" %}{% import "_macros.html" as m %}{% set nav='tickets' %}
+{% block title %}{{ t.ref }} — Help Desk{% endblock %}{% block content %}
+
+<div class="crumb"><a href="/">Tickets</a> / {{ t.ref }}</div>
+<div class="row" style="margin-bottom:14px">
+  <div><h1>{{ t.subject }}</h1>
+    <span class="sub mono">{{ t.ref }}{% if t.external_ref %} · COM {{ t.external_ref }}{% endif %}
+      · opened {{ t.received_at | relative }}</span></div>
+  <div class="right row">{{ m.status_pill(t.status) }} {{ m.prio_pill(t.priority) }}
+    {% if t.ada %}<span class="badge-ada">ADA</span>{% endif %}</div>
+</div>
+
+{% set readonly = current_user(request) and current_user(request).role == 'root' %}
+{% if readonly %}<div class="err" style="margin-bottom:14px">Read-only — the root
+  account can view tickets but not change them. This view is recorded in the audit log.</div>{% endif %}
+
+<div class="grid">
+<div>
+  {% if not readonly %}<div class="panel"><div class="panel-h">Move to
+    <span class="right sla-legend">Active time {{ live_seconds(t) | duration }}{% if t.status not in config.ACTIVE_STATUSES %} · paused{% endif %}</span>
+  </div><div class="panel-b"><div class="row">
+    {% for s in config.STATUSES if s != t.status %}
+    <form method="post" action="/tickets/{{ t.id }}/status">
+      <input type="hidden" name="status" value="{{ s }}">
+      <button class="btn btn-sm {{ 'btn-p' if s in ('open','resolved') }}">{{ config.STATUS_LABELS[s] }}</button>
+    </form>
+    {% endfor %}
+  </div>
+  {% if t.due_at %}<div style="margin-top:12px">{{ m.sla(t) }}</div>{% endif %}
+  </div></div>{% endif %}
+
+  {% if t.body %}
+  <div class="panel"><div class="panel-h">What was reported</div>
+    <div class="panel-b"><div class="body-text">{{ t.body }}</div></div></div>
+  {% endif %}
+
+  {% if not readonly %}<div class="panel"><div class="panel-h">Log correspondence</div><div class="panel-b">
+    <form method="get" class="row" style="margin-bottom:11px">
+      <select name="template_id" style="flex:1">
+        <option value="">Start from a saved reply…</option>
+        {% for tpl in templates_list %}<option value="{{ tpl.id }}">{{ tpl.name }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-sm">Load</button>
+    </form>
+    <form method="post" action="/tickets/{{ t.id }}/message">
+      <div class="row" style="margin-bottom:8px">
+        <select name="kind" id="kindsel" style="flex:1">
+          {% for key, (label, dirn, party) in config.MESSAGE_KINDS.items() %}
+          <option value="{{ key }}" {{ 'selected' if key=='out_customer' }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <input name="author" placeholder="Who (optional)" style="flex:1">
+        <input name="occurred_at" type="datetime-local" title="When it happened — leave blank for now">
+      </div>
+      <textarea id="replybox" name="body" rows="9" required
+        placeholder="Paste or type the message.">{{ drafted }}</textarea>
+      <div class="row" style="margin-top:9px">
+        <button type="button" class="btn btn-sm" data-copy="#replybox">Copy</button>
+        <label style="font-size:12px;display:flex;gap:6px;align-items:center;color:var(--ink-2)">
+          <input type="checkbox" name="track_questions" value="1" style="width:auto">
+          Track questions asked</label>
+        <button class="btn btn-p btn-sm right">Log entry</button>
+      </div>
+    </form>
+  </div></div>{% endif %}
+
+  {% if not readonly %}<div class="panel"><div class="panel-h">Paste a whole thread</div><div class="panel-b">
+    <form method="post" action="/tickets/{{ t.id }}/import">
+      <textarea name="raw" rows="4" required
+        placeholder="Paste an entire Outlook chain — it gets split into separate entries for you to review."></textarea>
+      <button class="btn btn-sm" style="margin-top:8px">Split into entries</button>
+    </form>
+  </div></div>{% endif %}
+
+  <div class="panel"><div class="panel-h">Timeline</div><div class="panel-b">
+    <ul class="tl">
+      {% for e in events %}
+      <li class="t-{{ e.type }} {{ 'voided' if e.voided_at }}"><span class="dot"></span>
+        <span class="when">{{ (e.occurred_at or e.created_at) | dt }}
+          · {{ config.MESSAGE_LABELS.get(e.type, e.type.replace('_',' ')) }}
+          {%- if e.author %} · {{ e.author }}{% endif %}</span>
+        <div class="what">{{ e.body }}</div>
+        {% if e.voided_at %}
+          <div class="voidnote">Struck {{ e.voided_at | relative }}{% if e.void_reason %} — {{ e.void_reason }}{% endif %}
+            <form method="post" action="/events/{{ e.id }}/unvoid" style="display:inline">
+              <input type="hidden" name="ticket_id" value="{{ t.id }}">
+              <button class="linkbtn">restore</button></form></div>
+        {% elif not readonly %}
+          <div class="rowacts">
+            <form method="post" action="/events/{{ e.id }}/void" style="display:inline"
+                  data-confirm="Strike this entry through? It stays visible.">
+              <input type="hidden" name="ticket_id" value="{{ t.id }}">
+              <input name="reason" placeholder="reason (optional)" class="tiny">
+              <button class="linkbtn">strike</button></form>
+            <form method="post" action="/events/{{ e.id }}/retime" style="display:inline">
+              <input type="hidden" name="ticket_id" value="{{ t.id }}">
+              <input name="occurred_at" type="datetime-local" class="tiny">
+              <button class="linkbtn">set time</button></form>
+          </div>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div></div>
+</div>
+
+<div>
+  <div class="panel"><div class="panel-h">Customer</div><div class="panel-b">
+    {% if t.customer_id %}
+      <dl class="kv">
+        <dt>Name</dt><dd>{{ t.customer_name or '—' }}</dd>
+        <dt>Email</dt><dd class="mono">{{ t.customer_email or '—' }}</dd>
+        <dt>Phone</dt><dd class="mono">{{ t.customer_phone or '—' }}</dd>
+        <dt>Account</dt><dd class="mono">{{ t.customer_account_id or '—' }}</dd>
+      </dl>
+      {% if emails|length > 1 or phones|length > 1 %}
+      <p class="hint" style="margin-top:7px">
+        {% for e in emails[1:] %}<span class="tag">{{ e.email }}</span>{% endfor %}
+        {% for ph in phones[1:] %}<span class="tag">{{ ph.phone }}</span>{% endfor %}</p>
+      {% endif %}
+      <a class="btn btn-sm" style="margin-top:11px" href="/customers/{{ t.customer_id }}">Full history</a>
+      {% if history %}
+      <div style="margin-top:13px;border-top:1px solid var(--rule-2);padding-top:11px">
+        <div class="l" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-2);font-weight:600;margin-bottom:7px">
+          {{ history|length }} other ticket{{ 's' if history|length != 1 }}</div>
+        {% for h in history[:5] %}
+        <div style="margin-bottom:6px"><a class="ref" href="/tickets/{{ h.id }}">{{ h.ref }}</a>
+          <span class="sub"> {{ h.subject|truncate(38) }}</span></div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    {% else %}<p class="sub">No customer linked.</p>{% endif %}
+  </div></div>
+
+  <div class="panel"><div class="panel-h">Details</div><div class="panel-b">
+    <form method="post" action="/tickets/{{ t.id }}/update">
+      <input type="hidden" name="subject" value="{{ t.subject }}">
+      <div class="field"><label class="f" for="priority">Priority</label>
+        <select id="priority" name="priority">{% for p in [1,2,3,4,5] %}
+          <option value="{{ p }}" {{ 'selected' if p==t.priority }}>{{ config.PRIORITY_LABELS[p] }}</option>
+        {% endfor %}</select></div>
+      <div class="field"><label class="f" for="category">Category</label>
+        <select id="category" name="category"><option value="">—</option>
+        {% for c in categories %}<option {{ 'selected' if c==t.category }}>{{ c }}</option>{% endfor %}
+        </select></div>
+      <div class="field"><label class="f" for="subcategory">Subcategory</label>
+        <input id="subcategory" name="subcategory" value="{{ t.subcategory or '' }}"></div>
+      <div class="field"><label class="f" for="channel">Channel</label>
+        <select id="channel" name="channel">{% for c in config.CHANNELS %}
+          <option value="{{ c }}" {{ 'selected' if c==t.channel }}>{{ config.CHANNEL_LABELS[c] }}</option>
+        {% endfor %}</select></div>
+      <div class="field"><label class="f" for="due_at">Target date</label>
+        <input id="due_at" name="due_at" type="date"
+               value="{{ t.due_at | date_input if t.due_at else '' }}"></div>
+      <div class="field"><label class="f" for="root_cause">Root cause</label>
+        <input id="root_cause" name="root_cause" value="{{ t.root_cause or '' }}"
+               placeholder="Once you know it"></div>
+      <div class="field"><label class="f" for="resolution">Resolution</label>
+        <textarea id="resolution" name="resolution" rows="4"
+          placeholder="What actually fixed it.">{{ t.resolution or '' }}</textarea></div>
+      <button class="btn btn-p btn-sm" style="width:100%">Save details</button>
+    </form>
+  </div></div>
+
+  <div class="panel"><div class="panel-h">Open questions
+    {% set unanswered = questions | rejectattr('answered_at') | list %}
+    {% if unanswered %}<span class="right pill s-waiting_customer">{{ unanswered|length }} waiting</span>{% endif %}
+  </div><div class="panel-b">
+    {% for q in questions %}
+    <div class="qrow {{ 'answered' if q.answered_at }}">
+      <div class="qtext">{{ q.text }}</div>
+      {% if q.answered_at %}
+        <div class="qans">{{ q.answer }}</div>
+        <form method="post" action="/questions/{{ q.id }}/answer">
+          <input type="hidden" name="ticket_id" value="{{ t.id }}">
+          <input type="hidden" name="clear" value="1">
+          <button class="linkbtn">reopen</button></form>
+      {% else %}
+        <form method="post" action="/questions/{{ q.id }}/answer" class="row">
+          <input type="hidden" name="ticket_id" value="{{ t.id }}">
+          <input name="answer" placeholder="Their answer" style="flex:1">
+          <button class="btn btn-sm">Save</button></form>
+      {% endif %}
+      <form method="post" action="/questions/{{ q.id }}/delete" style="display:inline">
+        <input type="hidden" name="ticket_id" value="{{ t.id }}">
+        <button class="linkbtn">remove</button></form>
+    </div>
+    {% else %}<p class="sub">Nothing outstanding.</p>{% endfor %}
+    <form method="post" action="/tickets/{{ t.id }}/questions/add" class="row" style="margin-top:9px">
+      <input name="text" placeholder="What did you ask?" style="flex:1" required>
+      <button class="btn btn-sm">Add</button>
+    </form>
+  </div></div>
+
+  <div class="panel"><div class="panel-h">Follow-up</div><div class="panel-b">
+    {% if t.follow_up_at and not t.follow_up_done %}
+      <p class="{{ 'fu-due' if t.follow_up_at <= now_iso() else 'sub' }}">
+        {{ t.follow_up_at | dt }}{% if t.follow_up_note %} — {{ t.follow_up_note }}{% endif %}</p>
+      <form method="post" action="/tickets/{{ t.id }}/followup">
+        <input type="hidden" name="done" value="1">
+        <button class="btn btn-sm">Mark done</button></form>
+    {% else %}
+      <form method="post" action="/tickets/{{ t.id }}/followup">
+        <div class="field"><input name="follow_up_at" type="datetime-local" required></div>
+        <div class="field"><input name="follow_up_note" placeholder="Nudge about what?"></div>
+        <button class="btn btn-sm" style="width:100%">Set reminder</button>
+      </form>
+    {% endif %}
+  </div></div>
+
+  <div class="panel"><div class="panel-h">Tags</div><div class="panel-b">
+    <div style="margin-bottom:9px">
+      {% for tag in tags %}
+      <span class="tag">{{ tag }}<form method="post" action="/tickets/{{ t.id }}/tag">
+        <input type="hidden" name="remove" value="{{ tag }}"><button title="Remove">&times;</button>
+      </form></span>
+      {% else %}<span class="sub">None yet.</span>{% endfor %}
+    </div>
+    <form method="post" action="/tickets/{{ t.id }}/tag" class="row">
+      <input name="tag" list="taglist" placeholder="Add tag" style="flex:1">
+      <datalist id="taglist">{% for tg in all_tags %}<option value="{{ tg }}">{% endfor %}</datalist>
+      <button class="btn btn-sm">Add</button>
+    </form>
+  </div></div>
+
+  {% if can(current_user(request), 'soft_delete') %}<div class="panel danger"><div class="panel-h">Delete ticket</div><div class="panel-b">
+    <form method="post" action="/tickets/{{ t.id }}/delete"
+          data-confirm="Queue {{ t.ref }} for deletion? Recoverable for {{ config.RETENTION_DAYS }} days.">
+      <button class="btn btn-d btn-sm" style="width:100%">Queue for deletion</button>
+    </form>
+    <p class="hint">Moves to trash and is removed permanently after
+      {{ config.RETENTION_DAYS }} days. Restorable until then.</p>
+  </div></div>{% endif %}
+</div>
+</div>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}{% set nav='root' %}
+{% block title %}Root — Help Desk{% endblock %}{% block content %}
+<h1>Root dashboard</h1>
+<p class="hint" style="margin-bottom:16px">System administration and analytics. Ticket
+  views from this account are read-only and recorded in the audit log.</p>
+
+{% set nopass = users | selectattr('password_hash', 'none') | list %}
+{% if nopass %}
+<div class="err" style="margin-bottom:16px">
+  {{ nopass | map(attribute='username') | join(', ') }} —
+  {{ 'has' if nopass|length == 1 else 'have' }} no password set and cannot sign in.
+  <a href="/root/users">Set one</a>.
+</div>
+{% endif %}
+
+<div class="stats">
+  <div class="stat"><div class="n">{{ stats.open_total }}</div><div class="l">Open tickets</div></div>
+  <div class="stat {{ 'alert' if stats.overdue }}"><div class="n">{{ stats.overdue }}</div>
+    <div class="l">Overdue</div></div>
+  <div class="stat good"><div class="n">{{ stats.resolved_week }}</div>
+    <div class="l">Resolved / 7d</div></div>
+  <a class="stat" href="/root/users"><div class="n">{{ users | selectattr('is_active') | list | length }}</div>
+    <div class="l">Active accounts</div></a>
+</div>
+
+<div class="row" style="margin-bottom:16px">
+  <a class="btn" href="/root/users">Manage accounts</a>
+  <a class="btn" href="/root/tickets">All tickets</a>
+  <a class="btn" href="/root/customers">All customers</a>
+  <a class="btn" href="/trash">Deletion queue</a>
+  <a class="btn right" href="/root/audit">Audit log</a>
+</div>
+
+<div class="panel"><div class="panel-h">Per-user activity</div>
+<table><thead><tr>
+  <th>User</th><th style="width:70px">Open</th><th style="width:80px">Overdue</th>
+  <th style="width:110px">Resolved 7d</th><th style="width:130px">Median 1st reply</th>
+  <th style="width:130px">Median resolution</th><th style="width:100px">Follow-ups</th>
+</tr></thead><tbody>
+{% for r in per_user %}
+<tr>
+  <td>{{ r.user.display_name or r.user.username }}
+    <span class="sub">{{ r.user.username }} · {{ r.user.role }}{% if not r.user.is_active %} · disabled{% endif %}</span></td>
+  <td class="mono">{{ r.open }}</td>
+  <td class="mono {{ 'sub' if not r.overdue }}"
+      style="{{ 'color:var(--red);font-weight:600' if r.overdue }}">{{ r.overdue }}</td>
+  <td class="mono {{ 'sub' if not r.resolved_7d }}">{{ r.resolved_7d }}</td>
+  <td class="mono sub">{{ r.median_first_reply | duration if r.median_first_reply is not none else '—' }}</td>
+  <td class="mono sub">{{ r.median_resolution | duration if r.median_resolution is not none else '—' }}</td>
+  <td class="mono {{ 'sub' if not r.follow_ups_due }}">{{ r.follow_ups_due }}</td>
+</tr>
+{% else %}<tr><td colspan="7" class="sub" style="padding:20px">No ticket accounts yet.</td></tr>{% endfor %}
+</tbody></table></div>
+
+<div class="panel"><div class="panel-h">Recent activity
+  <a class="right btn btn-sm" href="/root/audit">Full log</a></div>
+<table><tbody>
+{% for a in audit %}
+<tr><td class="mono sub nowrap" style="width:150px">{{ a.created_at | dt }}</td>
+  <td class="mono" style="width:130px">{{ a.username or '—' }}</td>
+  <td>{{ a.action.replace('_',' ') }} <span class="sub">{{ a.target }} {{ a.detail }}</span></td></tr>
+{% else %}<tr><td class="sub" style="padding:20px">Nothing recorded yet.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}
