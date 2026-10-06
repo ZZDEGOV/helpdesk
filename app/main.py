@@ -11,7 +11,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from . import auth, config, repo, threadparse
+from . import threadparse
+from . import auth
+from . import config
+from . import repo
 from .db import connect
 
 BASE = Path(__file__).resolve().parent

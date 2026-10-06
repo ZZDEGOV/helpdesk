@@ -8,13 +8,14 @@
 import os
 import tempfile
 
+from app import auth
 import pytest
 
 os.environ["HELPDESK_DB_PATH"] = os.path.join(tempfile.mkdtemp(), "perm_test.db")
 
 from fastapi.testclient import TestClient   # noqa: E402
 
-from app import auth, repo                  # noqa: E402
+from app import repo                  # noqa: E402
 from app.db import connect                  # noqa: E402
 from app.main import app                    # noqa: E402
 from app.migrate import run as migrate      # noqa: E402

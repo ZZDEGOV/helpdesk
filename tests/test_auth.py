@@ -2,11 +2,12 @@
 import os
 import tempfile
 
+from app import auth, config
 import pytest
 
 os.environ["HELPDESK_DB_PATH"] = os.path.join(tempfile.mkdtemp(), "auth_test.db")
 
-from app import auth, config, repo          # noqa: E402
+from app import repo          # noqa: E402
 from app.db import connect                  # noqa: E402
 from app.migrate import run as migrate      # noqa: E402
 
