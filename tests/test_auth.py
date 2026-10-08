@@ -1,15 +1,9 @@
 """Accounts, roles, and the status-extensibility guarantee."""
-import os
-import tempfile
-
-from app import auth, config
 import pytest
 
-os.environ["HELPDESK_DB_PATH"] = os.path.join(tempfile.mkdtemp(), "auth_test.db")
-
-from app import repo          # noqa: E402
-from app.db import connect                  # noqa: E402
-from app.migrate import run as migrate      # noqa: E402
+from app import auth, config, repo
+from app.db import connect
+from app.migrate import run as migrate
 
 
 @pytest.fixture
@@ -192,14 +186,11 @@ def test_vendor_reply_clears_external_wait(conn):
 def test_events_record_the_acting_user(conn):
     uid = auth.create_user(conn, username="ZachZ", display_name="Zach", password="pw123456")
     conn.commit()
-    token = repo.CURRENT_USER_ID.set(uid)
-    try:
-        tid = repo.create_ticket(conn, subject="Attributed")
-        repo.log_message(conn, tid, "note", "did a thing")
-        conn.commit()
-        assert all(e["user_id"] == uid for e in repo.get_events(conn, tid))
-    finally:
-        repo.CURRENT_USER_ID.reset(token)
+    conn.user_id = uid                     # what deps.current_user does per request
+    tid = repo.create_ticket(conn, subject="Attributed")
+    repo.log_message(conn, tid, "note", "did a thing")
+    conn.commit()
+    assert all(e["user_id"] == uid for e in repo.get_events(conn, tid))
 
 
 def test_per_user_stats_exclude_root(conn):

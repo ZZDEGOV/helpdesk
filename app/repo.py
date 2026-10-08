@@ -1,6 +1,5 @@
 """Data access. All ticket mutations go through here so the timeline and the
 SLA clock stay consistent."""
-import contextvars
 import json
 import re
 import sqlite3
@@ -22,12 +21,6 @@ def _parse(ts: str | None) -> datetime | None:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-# Set per-request by the auth middleware so log_event can attribute timeline
-# entries without every call site having to thread a user id through.
-CURRENT_USER_ID: contextvars.ContextVar[int | None] = contextvars.ContextVar(
-    "current_user_id", default=None)
 
 
 def _status_sql(statuses) -> str:
@@ -62,7 +55,7 @@ def log_event(conn, ticket_id: int, type_: str, body: str | None = None,
     cur = conn.execute(
         "INSERT INTO events (ticket_id, user_id, type, body, payload, author,"
         " occurred_at, created_at) VALUES (?,?,?,?,?,?,?,?)",
-        (ticket_id, CURRENT_USER_ID.get(), type_, body,
+        (ticket_id, getattr(conn, "user_id", None), type_, body,
          json.dumps(payload) if payload else None, author, occurred_at or now, now),
     )
     return cur.lastrowid
@@ -145,14 +138,20 @@ def get_customer(conn, customer_id: int) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
 
 
-def list_customers(conn, q: str | None = None,
-                   include_deleted: bool = False) -> list[sqlite3.Row]:
+def list_customers(conn, q: str | None = None, include_deleted: bool = False,
+                   owner_id: int | None = None) -> list[sqlite3.Row]:
+    """The customer directory is shared; owner_id only scopes the ticket counts,
+    so a user isn't told how many tickets exist that they can't open."""
+    params: list[Any] = []
+    owner_clause = ""
+    if owner_id is not None:
+        owner_clause = " AND t.owner_id = ?"
+        params.append(owner_id)
     sql = ("SELECT c.*, COUNT(t.id) AS ticket_count,"
            f" SUM(CASE WHEN t.status IN {OPEN_SQL} THEN 1 ELSE 0 END) AS open_count"
            " FROM customers c LEFT JOIN tickets t"
-           " ON t.customer_id = c.id AND t.deleted_at IS NULL"
+           " ON t.customer_id = c.id AND t.deleted_at IS NULL" + owner_clause
            + (" WHERE 1=1" if include_deleted else " WHERE c.deleted_at IS NULL"))
-    params: list[Any] = []
     if q:
         sql += (" AND (c.email LIKE ? OR c.name LIKE ? OR c.phone LIKE ?"
                 " OR c.account_id LIKE ? OR EXISTS (SELECT 1 FROM customer_emails e"
@@ -174,7 +173,13 @@ def create_ticket(conn, *, subject: str, body: str | None = None,
                   logged_by: str | None = None, received_at: str | None = None,
                   due_at: str | None = None, external_ref: str | None = None,
                   entry_id: str | None = None, conversation_id: str | None = None,
-                  raw: dict | None = None, tags: Iterable[str] = ()) -> int:
+                  raw: dict | None = None, tags: Iterable[str] = (),
+                  owner_id: int | None = None) -> int:
+    # Take the write lock before reading the last ref. Otherwise two people
+    # creating tickets at once both compute the same next ref and one of them
+    # fails on the UNIQUE constraint.
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
     now = utcnow()
     customer_id = upsert_customer(
         conn, email=customer_email, name=customer_name, phone=customer_phone,
@@ -182,12 +187,12 @@ def create_ticket(conn, *, subject: str, body: str | None = None,
     )
     ref = next_ref(conn)
     cur = conn.execute(
-        "INSERT INTO tickets (ref, customer_id, subject, body, channel, category,"
-        " subcategory, status, priority, ada, logged_by, received_at, created_at,"
-        " updated_at, due_at, active_seconds, last_status_at, external_ref, entry_id,"
-        " conversation_id, raw)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?)",
-        (ref, customer_id, subject.strip(), body, channel, category, subcategory,
+        "INSERT INTO tickets (ref, customer_id, owner_id, subject, body, channel,"
+        " category, subcategory, status, priority, ada, logged_by, received_at,"
+        " created_at, updated_at, due_at, active_seconds, last_status_at,"
+        " external_ref, entry_id, conversation_id, raw)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?)",
+        (ref, customer_id, owner_id, subject.strip(), body, channel, category, subcategory,
          status, priority, int(ada), logged_by, received_at or now, now, now, due_at,
          now, external_ref, entry_id, conversation_id,
          json.dumps(raw) if raw else None),
@@ -219,18 +224,20 @@ def list_tickets(conn, *, status: str | None = None, priority: int | None = None
                  category: str | None = None, channel: str | None = None,
                  q: str | None = None, customer_id: int | None = None,
                  overdue_only: bool = False, sort: str = "priority",
-                 limit: int = 500, include_deleted: bool = False) -> list[sqlite3.Row]:
+                 limit: int = 500, include_deleted: bool = False,
+                 owner_id: int | None = None) -> list[sqlite3.Row]:
+    """owner_id restricts the list to one user's tickets -- pass it for anyone
+    who can't see all tickets (see deps.visible_owner)."""
     sql = ("SELECT t.*, c.email AS customer_email, c.name AS customer_name,"
            " u.username AS owner_username"
            " FROM tickets t LEFT JOIN customers c ON c.id = t.customer_id"
            " LEFT JOIN users u ON u.id = t.owner_id"
-           " WHERE 1=1" if include_deleted else
-           "SELECT t.*, c.email AS customer_email, c.name AS customer_name,"
-           " u.username AS owner_username"
-           " FROM tickets t LEFT JOIN customers c ON c.id = t.customer_id"
-           " LEFT JOIN users u ON u.id = t.owner_id"
-           " WHERE t.deleted_at IS NULL")
+           + (" WHERE 1=1" if include_deleted else " WHERE t.deleted_at IS NULL"))
     params: list[Any] = []
+
+    if owner_id is not None:
+        sql += " AND t.owner_id = ?"
+        params.append(owner_id)
 
     if status == "open":
         sql += f" AND t.status IN {OPEN_SQL}"
@@ -409,6 +416,17 @@ def set_event_body(conn, event_id: int, body: str) -> None:
     conn.execute("UPDATE events SET body = ? WHERE id = ?", (body.strip(), event_id))
 
 
+def event_ticket_id(conn, event_id: int) -> int | None:
+    row = conn.execute("SELECT ticket_id FROM events WHERE id = ?", (event_id,)).fetchone()
+    return row["ticket_id"] if row else None
+
+
+def question_ticket_id(conn, question_id: int) -> int | None:
+    row = conn.execute("SELECT ticket_id FROM questions WHERE id = ?",
+                       (question_id,)).fetchone()
+    return row["ticket_id"] if row else None
+
+
 def get_events(conn, ticket_id: int) -> list[sqlite3.Row]:
     return conn.execute(
         "SELECT * FROM events WHERE ticket_id = ?"
@@ -472,9 +490,12 @@ def delete_template(conn, template_id: int) -> None:
     conn.execute("DELETE FROM templates WHERE id = ?", (template_id,))
 
 
-def render_template(body: str, ticket: sqlite3.Row | None) -> str:
+def render_template(body: str, ticket: sqlite3.Row | None, signer: str = "") -> str:
     """Fill {{placeholders}} from a ticket. Unknown ones are left visible so you
-    notice them rather than sending an empty gap."""
+    notice them rather than sending an empty gap.
+
+    `signer` fills {{owner}} -- the person drafting the reply, not a global
+    setting, so each teammate's replies go out under their own name."""
     if ticket is None:
         return body
     name = (ticket["customer_name"] or "").strip()
@@ -484,7 +505,7 @@ def render_template(body: str, ticket: sqlite3.Row | None) -> str:
         "full_name": name or "there",
         "ref": ticket["ref"],
         "subject": ticket["subject"],
-        "owner": config.OWNER.title(),
+        "owner": signer or "{{owner}}",
         "due_date": due.strftime("%B %d, %Y") if due else "shortly",
         "category": ticket["category"] or "",
         "external_ref": ticket["external_ref"] or "",
@@ -497,29 +518,32 @@ def render_template(body: str, ticket: sqlite3.Row | None) -> str:
 
 # ---------------------------------------------------------------- dashboard
 
-def dashboard_stats(conn) -> dict[str, Any]:
+def dashboard_stats(conn, owner_id: int | None = None) -> dict[str, Any]:
+    """Counts for the dashboard cards. owner_id scopes them to one user's tickets."""
+    scope, scope_params = ("", []) if owner_id is None else (" AND owner_id = ?", [owner_id])
+
     counts = {s: 0 for s in config.STATUSES}
     for row in conn.execute("SELECT status, COUNT(*) c FROM tickets"
-                            " WHERE deleted_at IS NULL GROUP BY status"):
+                            " WHERE deleted_at IS NULL" + scope + " GROUP BY status",
+                            scope_params):
         counts[row["status"]] = row["c"]
 
     overdue = conn.execute(
         "SELECT COUNT(*) c FROM tickets WHERE deleted_at IS NULL AND due_at IS NOT NULL"
-        f" AND due_at < ? AND status IN {OPEN_SQL}",
-        (utcnow(),)).fetchone()["c"]
+        f" AND due_at < ? AND status IN {OPEN_SQL}" + scope,
+        [utcnow(), *scope_params]).fetchone()["c"]
 
-    week_ago = (_now().timestamp() - 7 * 86400)
+    week_ago = (_now() - timedelta(days=7)).isoformat(timespec="seconds")
     resolved_week = conn.execute(
         "SELECT COUNT(*) c FROM tickets WHERE deleted_at IS NULL"
-        " AND resolved_at IS NOT NULL AND resolved_at > ?",
-        (datetime.fromtimestamp(week_ago, tz=timezone.utc).isoformat(timespec="seconds"),)
-    ).fetchone()["c"]
+        " AND resolved_at IS NOT NULL AND resolved_at > ?" + scope,
+        [week_ago, *scope_params]).fetchone()["c"]
 
     by_category = conn.execute(
         "SELECT COALESCE(category,'Uncategorized') category, COUNT(*) c FROM tickets"
         " WHERE deleted_at IS NULL"
-        f" AND status IN {OPEN_SQL}"
-        " GROUP BY category ORDER BY c DESC LIMIT 6").fetchall()
+        f" AND status IN {OPEN_SQL}" + scope +
+        " GROUP BY category ORDER BY c DESC LIMIT 6", scope_params).fetchall()
 
     return {
         "counts": counts,
@@ -528,7 +552,7 @@ def dashboard_stats(conn) -> dict[str, Any]:
         "overdue": overdue,
         "resolved_week": resolved_week,
         "by_category": by_category,
-        "follow_ups": len(due_follow_ups(conn)),
+        "follow_ups": len(due_follow_ups(conn, owner_id)),
         "deleted": conn.execute(
             "SELECT (SELECT COUNT(*) FROM tickets WHERE deleted_at IS NOT NULL)"
             " + (SELECT COUNT(*) FROM customers WHERE deleted_at IS NOT NULL) c"
@@ -804,13 +828,16 @@ def clear_follow_up(conn, ticket_id: int, done: bool = True) -> None:
                  (1 if done else 0, utcnow(), ticket_id))
 
 
-def due_follow_ups(conn) -> list[sqlite3.Row]:
-    return conn.execute(
-        "SELECT t.*, c.name AS customer_name, c.email AS customer_email"
-        " FROM tickets t LEFT JOIN customers c ON c.id = t.customer_id"
-        " WHERE t.follow_up_at IS NOT NULL AND t.follow_up_done = 0"
-        " AND t.deleted_at IS NULL AND t.follow_up_at <= ?"
-        " ORDER BY t.follow_up_at ASC", (utcnow(),)).fetchall()
+def due_follow_ups(conn, owner_id: int | None = None) -> list[sqlite3.Row]:
+    sql = ("SELECT t.*, c.name AS customer_name, c.email AS customer_email"
+           " FROM tickets t LEFT JOIN customers c ON c.id = t.customer_id"
+           " WHERE t.follow_up_at IS NOT NULL AND t.follow_up_done = 0"
+           " AND t.deleted_at IS NULL AND t.follow_up_at <= ?")
+    params: list[Any] = [utcnow()]
+    if owner_id is not None:
+        sql += " AND t.owner_id = ?"
+        params.append(owner_id)
+    return conn.execute(sql + " ORDER BY t.follow_up_at ASC", params).fetchall()
 
 
 def pending_notifications(conn) -> list[sqlite3.Row]:

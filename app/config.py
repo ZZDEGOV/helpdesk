@@ -1,43 +1,69 @@
-"""Settings, loaded from .env in the project root."""
-import os
-import secrets
+"""Settings and domain constants.
+
+Deployment settings come from environment variables prefixed HELPDESK_ (or a .env
+file in the project root). Real environment variables win over .env, which is
+how Docker and the test suite override them. Everything below the settings block
+is domain configuration that lives in code.
+"""
 from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-def _load_env() -> None:
-    env_path = BASE_DIR / ".env"
-    if not env_path.exists():
-        return
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="HELPDESK_", env_file=BASE_DIR / ".env",
+                                      env_file_encoding="utf-8", extra="ignore")
+
+    data_dir: Path = BASE_DIR / "data"
+    db_path: Path | None = Field(None, description="Defaults to <data_dir>/helpdesk.db")
+
+    timezone: str = "America/New_York"
+
+    # Business hours used to turn a target *date* into a deadline (24h, local time).
+    work_start: int = 8
+    work_end: int = 17
+
+    session_days: int = 7
+    max_failed_logins: int = 5
+    lockout_minutes: int = 15
+    retention_days: int = Field(7, description="Days a soft-deleted record stays in the trash")
+
+    backup_dir: Path | None = Field(None, description="Defaults to <data_dir>/backups")
+    backup_keep: int = Field(14, description="Daily snapshots to keep")
+
+    # Set when serving over HTTPS so the session cookie is never sent in clear text.
+    secure_cookies: bool = False
+
+    # Username the v2.0 migration assigns pre-account tickets to. Only matters when
+    # upgrading a database that predates accounts.
+    owner_username: str = "ZachZ"
+
+    # Extra substrings that mark a pasted message as written by the team, on top of
+    # the signed-in user's own username and display name. Comma separated.
+    owner_hints: str = ""
 
 
-_load_env()
+settings = Settings()
 
-DATA_DIR = Path(os.environ.get("HELPDESK_DATA_DIR", BASE_DIR / "data"))
+DATA_DIR = settings.data_dir
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-DB_PATH = Path(os.environ.get("HELPDESK_DB_PATH", DATA_DIR / "helpdesk.db"))
+DB_PATH = settings.db_path or DATA_DIR / "helpdesk.db"
 
-HOST = os.environ.get("HELPDESK_HOST", "0.0.0.0")
-PORT = int(os.environ.get("HELPDESK_PORT", "8000"))
-
-# Blank password disables the login gate entirely.
-PASSWORD = os.environ.get("HELPDESK_PASSWORD", "").strip()
-SECRET_KEY = os.environ.get("HELPDESK_SECRET_KEY", "") or secrets.token_hex(32)
-
-TIMEZONE = os.environ.get("HELPDESK_TIMEZONE", "America/New_York")
-OWNER = os.environ.get("HELPDESK_OWNER", "me")
-OWNER_USERNAME = os.environ.get("HELPDESK_OWNER_USERNAME", "ZachZ")
-
-# Business hours used by the SLA clock (24h, local time).
-WORK_START_HOUR = int(os.environ.get("HELPDESK_WORK_START", "8"))
-WORK_END_HOUR = int(os.environ.get("HELPDESK_WORK_END", "17"))
+TIMEZONE = settings.timezone
+WORK_START_HOUR = settings.work_start
+WORK_END_HOUR = settings.work_end
+SESSION_DAYS = settings.session_days
+MAX_FAILED_LOGINS = settings.max_failed_logins
+LOCKOUT_MINUTES = settings.lockout_minutes
+RETENTION_DAYS = settings.retention_days
+BACKUP_DIR = settings.backup_dir or DATA_DIR / "backups"
+BACKUP_KEEP = settings.backup_keep
+SECURE_COOKIES = settings.secure_cookies
+OWNER_USERNAME = settings.owner_username
+OWNER_HINTS = [h.strip().lower() for h in settings.owner_hints.split(",") if h.strip()]
 
 # ---------------------------------------------------------------- statuses
 #
@@ -79,11 +105,7 @@ CHANNEL_LABELS = {
 
 ROLES = ["root", "admin", "user"]
 ROLE_LABELS = {"root": "Root (system admin)", "admin": "Admin (sees all tickets)",
-               "user": "User"}
-
-SESSION_DAYS = int(os.environ.get("HELPDESK_SESSION_DAYS", "7"))
-MAX_FAILED_LOGINS = int(os.environ.get("HELPDESK_MAX_FAILED_LOGINS", "5"))
-LOCKOUT_MINUTES = int(os.environ.get("HELPDESK_LOCKOUT_MINUTES", "15"))
+               "user": "User (sees own tickets)"}
 
 PRIORITY_LABELS = {1: "P1 — Critical", 2: "P2 — High", 3: "P3 — Normal",
                    4: "P4 — Low", 5: "P5 — Trivial"}
@@ -92,10 +114,6 @@ DEFAULT_CATEGORIES = [
     "Complaints", "Commendation", "Service Request", "Information Request",
     "Billing", "Account Access", "App / Technical", "Accessibility (ADA)", "Other",
 ]
-
-
-# Soft-deleted records are purged after this many days.
-RETENTION_DAYS = int(os.environ.get("HELPDESK_RETENTION_DAYS", "7"))
 
 # One composer, one dropdown. key -> (label, direction, party)
 MESSAGE_KINDS = {
@@ -109,7 +127,3 @@ MESSAGE_KINDS = {
 }
 MESSAGE_LABELS = {k: v[0] for k, v in MESSAGE_KINDS.items()}
 CORRESPONDENCE = set(MESSAGE_KINDS) - {"note"}
-
-# Substrings that identify you in a pasted thread, for guessing message direction.
-OWNER_HINTS = [h.strip().lower() for h in
-               os.environ.get("HELPDESK_OWNER_HINTS", OWNER).split(",") if h.strip()]

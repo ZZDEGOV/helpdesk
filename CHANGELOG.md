@@ -1,5 +1,44 @@
 # Changelog
 
+## v3.0 — Team server
+
+Runs in Docker on the lab server instead of one person's PC. No schema change;
+existing databases load as-is.
+
+### Ticket visibility
+Users now see only the tickets they own. Admins and root see all. A ticket you
+can't see returns *Not found* everywhere — its page, every action on it, the API,
+and timeline/question actions (which used to trust a hidden `ticket_id` form field).
+Dashboard counts, follow-ups, customer pages and a ticket's "other tickets" list
+are scoped the same way. The customer directory itself stays shared.
+
+### Fixes
+- `{{owner}}` in saved replies is now the person drafting the reply. It used to be
+  the global `HELPDESK_OWNER` setting, so every reply was signed "Me".
+- Two people creating tickets at the same moment could both get the same
+  `HD-YYYY-NNNN` ref, and one would fail. Ref allocation now holds the write lock.
+- Bad form input (e.g. an unknown status) shows an error page instead of a crash.
+- The test suite could wipe the real database: some test files imported the app
+  before redirecting it to a temp file. `tests/conftest.py` now redirects first and
+  refuses to run against `data/`.
+
+### Structure
+- `main.py` split into routers (`app/routers/`). Access rules are FastAPI
+  dependencies declared on each route (`deps.py`) instead of a path-matching
+  middleware.
+- Form bodies and API responses are Pydantic models (`schemas.py`); settings use
+  `pydantic-settings`. `/docs` documents every route — sign-in required.
+- New read-only JSON API under `/api/v1`.
+- Migrations run at startup (lifespan), not at import. An hourly in-process sweep
+  purges expired trash and sessions instead of doing it on page loads.
+- Daily automatic backups (`python -m app.backup`), and `/health` for Docker.
+
+### Removed
+`run.py`, `run.bat`, `update.ps1`, and the retired settings `HELPDESK_PASSWORD`,
+`HELPDESK_SECRET_KEY`, `HELPDESK_OWNER`, `HELPDESK_HOST`, `HELPDESK_PORT`.
+Dependencies updated to current releases; dev-only ones moved to
+`requirements-dev.txt`.
+
 ## v2.1 — Deletion permissions
 
 Deletion is now split three ways. **Striking through timeline entries is unaffected** —

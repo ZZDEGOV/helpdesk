@@ -1,0 +1,17 @@
+services:
+  helpdesk:
+    build: .
+    image: transit-helpdesk:latest
+    container_name: helpdesk
+    restart: unless-stopped
+    ports:
+      - "8000:8000"          # host:container -- change the left side to move it
+    environment:
+      HELPDESK_TIMEZONE: America/New_York
+      # HELPDESK_RETENTION_DAYS: "7"
+      # HELPDESK_BACKUP_KEEP: "14"
+    volumes:
+      - helpdesk-data:/data  # database and daily backups (/data/backups)
+
+volumes:
+  helpdesk-data:

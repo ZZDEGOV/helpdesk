@@ -13,8 +13,22 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(config.DB_PATH, timeout=15)
+class Connection(sqlite3.Connection):
+    """A connection that knows who is acting through it.
+
+    The request's user is attached here (deps.current_user) so repo.log_event can
+    attribute timeline entries without every call site threading a user id
+    through. Scripts and tests that never set it simply record no user.
+    """
+    user_id: int | None = None
+
+
+def connect() -> Connection:
+    # check_same_thread=False: FastAPI runs a sync dependency and the sync route
+    # that uses it on different threadpool threads. The connection is still only
+    # ever used by one request at a time.
+    conn = sqlite3.connect(config.DB_PATH, timeout=15, factory=Connection,
+                           check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")

@@ -1,15 +1,10 @@
 """Core logic tests. The SLA clock is the part most worth guarding."""
-import os
-import tempfile
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-os.environ["HELPDESK_DB_PATH"] = os.path.join(tempfile.mkdtemp(), "test.db")
-os.environ["HELPDESK_PASSWORD"] = ""
-
-from app import repo                    # noqa: E402
-from app.db import connect, init_db     # noqa: E402
+from app import repo
+from app.db import connect, init_db
 
 
 @pytest.fixture

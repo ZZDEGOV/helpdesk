@@ -1,0 +1,12 @@
+# Only requirements.txt and app/ are copied into the image; this keeps the build
+# context small and makes sure local data and secrets never reach it.
+.git
+.venv
+.env
+data/
+backups/
+tests/
+**/__pycache__
+.pytest_cache
+*.db
+*.db-*

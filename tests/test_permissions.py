@@ -5,50 +5,12 @@
   admin -- queued (soft) deletion and restore.
   root  -- immediate permanent deletion, from its own admin area only.
 """
-import os
-import tempfile
-
-from app import auth
 import pytest
 
-os.environ["HELPDESK_DB_PATH"] = os.path.join(tempfile.mkdtemp(), "perm_test.db")
+from app import auth, repo
+from app.db import connect
 
-from fastapi.testclient import TestClient   # noqa: E402
-
-from app import repo                  # noqa: E402
-from app.db import connect                  # noqa: E402
-from app.main import app                    # noqa: E402
-from app.migrate import run as migrate      # noqa: E402
-
-NR = {"follow_redirects": False}
-
-
-@pytest.fixture
-def env():
-    migrate(verbose=False)
-    with connect() as conn:
-        for table in ("sessions", "audit_log", "events", "tickets", "customers", "users"):
-            conn.execute(f"DELETE FROM {table}")
-        conn.commit()
-
-    root = TestClient(app)
-    root.post("/setup", data={"username": "root", "password": "rootpass123",
-                              "confirm": "rootpass123"}, **NR)
-    clients = {"root": root}
-    for name, role in (("ZachZ", "admin"), ("mreed", "user")):
-        root.post("/root/users/create", data={"username": name, "display_name": name,
-                                              "password": "temp12345", "role": role}, **NR)
-        c = TestClient(app)
-        c.post("/login", data={"username": name, "password": "temp12345"}, **NR)
-        c.post("/change-password", data={"password": "realpass123",
-                                         "confirm": "realpass123"}, **NR)
-        clients[role] = c
-    return clients
-
-
-def _new_ticket(client, subject="Test", **extra):
-    data = {"subject": subject, "priority": "3", **extra}
-    return client.post("/tickets/new", data=data, **NR).headers["location"].split("/")[-1]
+from .conftest import NR, new_ticket as _new_ticket
 
 
 # ---------------------------------------------------------------- capabilities

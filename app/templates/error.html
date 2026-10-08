@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }} — Help Desk{% endblock %}{% block content %}
+<div class="panel"><div class="panel-b">
+  <h3>{{ heading }}</h3>
+  <p>{{ message }}</p>
+  {% if details %}<ul>{% for d in details %}<li>{{ d }}</li>{% endfor %}</ul>{% endif %}
+  <p><a href="{{ back }}">Back</a></p>
+</div></div>
+{% endblock %}
