@@ -36,6 +36,19 @@ OPEN_SQL = _status_sql(config.OPEN_STATUSES)
 ACTIVE_SQL = _status_sql(config.ACTIVE_STATUSES)
 
 
+def _visible(viewer_id: int | None, alias: str = "t.") -> tuple[str, list[Any]]:
+    """SQL + params limiting tickets to what one non-admin can see: the tickets
+    they own, plus tickets in a group they belong to. None means no limit.
+
+    Every scoped query in this module goes through here, and auth.can_view_ticket
+    applies the same rule to a single ticket -- change them together."""
+    if viewer_id is None:
+        return "", []
+    return (f" AND ({alias}owner_id = ? OR {alias}group_id IN"
+            " (SELECT group_id FROM group_members WHERE user_id = ?))",
+            [viewer_id, viewer_id])
+
+
 def next_ref(conn: sqlite3.Connection) -> str:
     """HD-2026-0001, sequential within the calendar year."""
     year = _now().year
@@ -139,14 +152,10 @@ def get_customer(conn, customer_id: int) -> sqlite3.Row | None:
 
 
 def list_customers(conn, q: str | None = None, include_deleted: bool = False,
-                   owner_id: int | None = None) -> list[sqlite3.Row]:
-    """The customer directory is shared; owner_id only scopes the ticket counts,
+                   viewer_id: int | None = None) -> list[sqlite3.Row]:
+    """The customer directory is shared; viewer_id only scopes the ticket counts,
     so a user isn't told how many tickets exist that they can't open."""
-    params: list[Any] = []
-    owner_clause = ""
-    if owner_id is not None:
-        owner_clause = " AND t.owner_id = ?"
-        params.append(owner_id)
+    owner_clause, params = _visible(viewer_id)
     sql = ("SELECT c.*, COUNT(t.id) AS ticket_count,"
            f" SUM(CASE WHEN t.status IN {OPEN_SQL} THEN 1 ELSE 0 END) AS open_count"
            " FROM customers c LEFT JOIN tickets t"
@@ -174,7 +183,7 @@ def create_ticket(conn, *, subject: str, body: str | None = None,
                   due_at: str | None = None, external_ref: str | None = None,
                   entry_id: str | None = None, conversation_id: str | None = None,
                   raw: dict | None = None, tags: Iterable[str] = (),
-                  owner_id: int | None = None) -> int:
+                  owner_id: int | None = None, group_id: int | None = None) -> int:
     # Take the write lock before reading the last ref. Otherwise two people
     # creating tickets at once both compute the same next ref and one of them
     # fails on the UNIQUE constraint.
@@ -187,12 +196,12 @@ def create_ticket(conn, *, subject: str, body: str | None = None,
     )
     ref = next_ref(conn)
     cur = conn.execute(
-        "INSERT INTO tickets (ref, customer_id, owner_id, subject, body, channel,"
+        "INSERT INTO tickets (ref, customer_id, owner_id, group_id, subject, body, channel,"
         " category, subcategory, status, priority, ada, logged_by, received_at,"
         " created_at, updated_at, due_at, active_seconds, last_status_at,"
         " external_ref, entry_id, conversation_id, raw)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?)",
-        (ref, customer_id, owner_id, subject.strip(), body, channel, category, subcategory,
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?)",
+        (ref, customer_id, owner_id, group_id, subject.strip(), body, channel, category, subcategory,
          status, priority, int(ada), logged_by, received_at or now, now, now, due_at,
          now, external_ref, entry_id, conversation_id,
          json.dumps(raw) if raw else None),
@@ -210,8 +219,11 @@ def create_ticket(conn, *, subject: str, body: str | None = None,
 def get_ticket(conn, ticket_id: int) -> sqlite3.Row | None:
     return conn.execute(
         "SELECT t.*, c.email AS customer_email, c.name AS customer_name,"
-        " c.phone AS customer_phone, c.account_id AS customer_account_id"
+        " c.phone AS customer_phone, c.account_id AS customer_account_id,"
+        " u.username AS owner_username, g.name AS group_name"
         " FROM tickets t LEFT JOIN customers c ON c.id = t.customer_id"
+        " LEFT JOIN users u ON u.id = t.owner_id"
+        " LEFT JOIN user_groups g ON g.id = t.group_id"
         " WHERE t.id = ?", (ticket_id,)).fetchone()
 
 
@@ -225,19 +237,26 @@ def list_tickets(conn, *, status: str | None = None, priority: int | None = None
                  q: str | None = None, customer_id: int | None = None,
                  overdue_only: bool = False, sort: str = "priority",
                  limit: int = 500, include_deleted: bool = False,
-                 owner_id: int | None = None) -> list[sqlite3.Row]:
-    """owner_id restricts the list to one user's tickets -- pass it for anyone
-    who can't see all tickets (see deps.visible_owner)."""
+                 viewer_id: int | None = None, owner_id: int | None = None,
+                 group_id: int | None = None) -> list[sqlite3.Row]:
+    """viewer_id limits the list to what that person may see (their own tickets
+    and their groups') -- pass it for anyone who can't see all tickets (see
+    deps.viewer_id). owner_id and group_id are plain filters on top of that."""
     sql = ("SELECT t.*, c.email AS customer_email, c.name AS customer_name,"
-           " u.username AS owner_username"
+           " u.username AS owner_username, g.name AS group_name"
            " FROM tickets t LEFT JOIN customers c ON c.id = t.customer_id"
            " LEFT JOIN users u ON u.id = t.owner_id"
+           " LEFT JOIN user_groups g ON g.id = t.group_id"
            + (" WHERE 1=1" if include_deleted else " WHERE t.deleted_at IS NULL"))
-    params: list[Any] = []
+    visible_sql, params = _visible(viewer_id)
+    sql += visible_sql
 
     if owner_id is not None:
         sql += " AND t.owner_id = ?"
         params.append(owner_id)
+    if group_id is not None:
+        sql += " AND t.group_id = ?"
+        params.append(group_id)
 
     if status == "open":
         sql += f" AND t.status IN {OPEN_SQL}"
@@ -312,6 +331,25 @@ def set_status(conn, ticket_id: int, new_status: str, user_id: int | None = None
 
 ALLOWED_FIELDS = {"subject", "body", "priority", "category", "subcategory", "channel",
                   "resolution", "root_cause", "due_at", "ada", "logged_by"}
+
+
+def set_group(conn, ticket_id: int, group_id: int | None) -> None:
+    """Move a ticket into a group (its members can then see it), or out of all
+    groups (None: private to its owner again). Recorded on the timeline."""
+    ticket = conn.execute("SELECT group_id FROM tickets WHERE id = ?",
+                          (ticket_id,)).fetchone()
+    if not ticket or ticket["group_id"] == group_id:
+        return
+
+    def name(gid: int | None) -> str:
+        row = conn.execute("SELECT name FROM user_groups WHERE id = ?", (gid,)).fetchone()
+        return row["name"] if row else "only the owner"
+
+    conn.execute("UPDATE tickets SET group_id = ?, updated_at = ? WHERE id = ?",
+                 (group_id, utcnow(), ticket_id))
+    log_event(conn, ticket_id, "field_change",
+              f"Shared with changed: {name(ticket['group_id'])} → {name(group_id)}",
+              {"field": "group_id", "from": ticket["group_id"], "to": group_id})
 
 
 def update_fields(conn, ticket_id: int, changes: dict[str, Any]) -> None:
@@ -518,9 +556,10 @@ def render_template(body: str, ticket: sqlite3.Row | None, signer: str = "") -> 
 
 # ---------------------------------------------------------------- dashboard
 
-def dashboard_stats(conn, owner_id: int | None = None) -> dict[str, Any]:
-    """Counts for the dashboard cards. owner_id scopes them to one user's tickets."""
-    scope, scope_params = ("", []) if owner_id is None else (" AND owner_id = ?", [owner_id])
+def dashboard_stats(conn, viewer_id: int | None = None) -> dict[str, Any]:
+    """Counts for the dashboard cards. viewer_id scopes them to the tickets that
+    person can see."""
+    scope, scope_params = _visible(viewer_id, alias="")
 
     counts = {s: 0 for s in config.STATUSES}
     for row in conn.execute("SELECT status, COUNT(*) c FROM tickets"
@@ -552,7 +591,7 @@ def dashboard_stats(conn, owner_id: int | None = None) -> dict[str, Any]:
         "overdue": overdue,
         "resolved_week": resolved_week,
         "by_category": by_category,
-        "follow_ups": len(due_follow_ups(conn, owner_id)),
+        "follow_ups": len(due_follow_ups(conn, viewer_id)),
         "deleted": conn.execute(
             "SELECT (SELECT COUNT(*) FROM tickets WHERE deleted_at IS NOT NULL)"
             " + (SELECT COUNT(*) FROM customers WHERE deleted_at IS NOT NULL) c"
@@ -828,16 +867,14 @@ def clear_follow_up(conn, ticket_id: int, done: bool = True) -> None:
                  (1 if done else 0, utcnow(), ticket_id))
 
 
-def due_follow_ups(conn, owner_id: int | None = None) -> list[sqlite3.Row]:
+def due_follow_ups(conn, viewer_id: int | None = None) -> list[sqlite3.Row]:
     sql = ("SELECT t.*, c.name AS customer_name, c.email AS customer_email"
            " FROM tickets t LEFT JOIN customers c ON c.id = t.customer_id"
            " WHERE t.follow_up_at IS NOT NULL AND t.follow_up_done = 0"
            " AND t.deleted_at IS NULL AND t.follow_up_at <= ?")
-    params: list[Any] = [utcnow()]
-    if owner_id is not None:
-        sql += " AND t.owner_id = ?"
-        params.append(owner_id)
-    return conn.execute(sql + " ORDER BY t.follow_up_at ASC", params).fetchall()
+    visible_sql, visible_params = _visible(viewer_id)
+    return conn.execute(sql + visible_sql + " ORDER BY t.follow_up_at ASC",
+                        [utcnow(), *visible_params]).fetchall()
 
 
 def pending_notifications(conn) -> list[sqlite3.Row]:

@@ -54,6 +54,7 @@ class TicketCreate(BaseModel):
     received_at: LocalDateTime = Field(None, description="Defaults to now")
     due_at: LocalDate = Field(None, description="Target date; the deadline is end of work day")
     tags: str = Field("", description="Comma separated")
+    group_id: OptionalId = Field(None, description="Share with this group; blank = only you")
 
 
 class TicketUpdate(BaseModel):
@@ -69,6 +70,10 @@ class TicketUpdate(BaseModel):
 
 class StatusChange(BaseModel):
     status: Status
+
+
+class GroupChange(BaseModel):
+    group_id: OptionalId = Field(None, description="Blank = private to the owner")
 
 
 class MessageCreate(BaseModel):
@@ -156,28 +161,40 @@ class UserDelete(BaseModel):
 
 # ---------------------------------------------------------------- forms: digest
 
-DigestScope = Literal["all", "own"]
+DigestScope = Literal["all", "team", "own"]
+Weekday = Annotated[int, Field(ge=0, le=6)]
 
 
-class DigestSubscribe(BaseModel):
-    user_id: int
-    scope: DigestScope = Field("all", description="all = every open ticket; own = theirs only")
-    email: str = Field("", description="Sets the account's email address, if given")
-
-
-class DigestScopeChange(BaseModel):
-    scope: DigestScope
-
-
-class DigestSchedule(BaseModel):
-    days: list[Annotated[int, Field(ge=0, le=6)]] = Field(
+class Schedule(BaseModel):
+    """When a digest goes out. Shared by subscribers and groups."""
+    days: list[Weekday] = Field(
         default_factory=list, description="0 = Monday ... 6 = Sunday; none = no schedule")
     hour: int = Field(8, ge=0, le=23, description="Local time, 24h")
     on_new_ticket: bool = Field(False, description="Also email when a ticket is created")
 
 
+class DigestSubscriberSettings(Schedule):
+    scope: DigestScope = Field("all", description="all = every open ticket; team = their "
+                               "own and their groups'; own = theirs only")
+
+
+class DigestSubscribe(DigestSubscriberSettings):
+    user_id: int
+    email: str = Field("", description="Sets the account's email address, if given")
+
+
 class DigestSend(BaseModel):
     user_id: OptionalId = Field(None, description="Send to this subscriber only")
+
+
+# ---------------------------------------------------------------- forms: groups
+
+class GroupName(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+
+
+class GroupMember(BaseModel):
+    user_id: int
 
 
 # ---------------------------------------------------------------- API responses

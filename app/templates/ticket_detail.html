@@ -162,6 +162,25 @@
     </form>
   </div></div>
 
+  <div class="panel"><div class="panel-h">Shared with</div><div class="panel-b">
+    <dl class="kv">
+      <dt>Owner</dt><dd>{{ t.owner_username or '—' }}</dd>
+      <dt>Group</dt><dd>{{ t.group_name or 'None — only the owner and admins see this' }}</dd>
+    </dl>
+    {% if can_regroup and groups %}
+    <form method="post" action="/tickets/{{ t.id }}/group" class="row" style="margin-top:11px">
+      <select name="group_id" style="flex:1">
+        <option value="">Only the owner</option>
+        {% for g in groups %}
+        <option value="{{ g.id }}" {{ 'selected' if g.id==t.group_id }}>{{ g.name }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn btn-sm">Save</button>
+    </form>
+    <p class="hint">Everyone in the chosen group can see and work this ticket.</p>
+    {% endif %}
+  </div></div>
+
   <div class="panel"><div class="panel-h">Open questions
     {% set unanswered = questions | rejectattr('answered_at') | list %}
     {% if unanswered %}<span class="right pill s-waiting_customer">{{ unanswered|length }} waiting</span>{% endif %}

@@ -138,10 +138,10 @@ def test_scope_controls_which_tickets_are_in_the_email(env):
 def test_root_can_change_scope_and_remove(env):
     subscribe(env["root"], "mreed", scope="own")
     uid = user_id("mreed")
-    env["root"].post(f"/root/digest/subscribers/{uid}/scope", data={"scope": "all"}, **NR)
+    env["root"].post(f"/root/digest/subscribers/{uid}/update", data={"scope": "all"}, **NR)
     with connect() as conn:
         assert digest.get_subscriber(conn, uid)["scope"] == "all"
-    assert env["root"].post(f"/root/digest/subscribers/{uid}/scope",
+    assert env["root"].post(f"/root/digest/subscribers/{uid}/update",
                             data={"scope": "everything"}, **NR).status_code == 400
     env["root"].post(f"/root/digest/subscribers/{uid}/remove", data={}, **NR)
     with connect() as conn:
@@ -179,29 +179,39 @@ def test_send_to_one_subscriber_only(env):
 
 # ---------------------------------------------------------------- schedule
 
+def set_schedule(root, username: str, days=(), hour: int = 0, on_new_ticket: bool = False,
+                 scope: str = "all"):
+    data = {"scope": scope, "days": [str(d) for d in days], "hour": str(hour)}
+    if on_new_ticket:
+        data["on_new_ticket"] = "1"
+    return root.post(f"/root/digest/subscribers/{user_id(username)}/update", data=data, **NR)
+
+
 def test_last_slot_picks_the_most_recent_scheduled_moment():
     wednesday_noon = datetime(2026, 11, 18, 12, 0, tzinfo=LOCAL_TZ)
     monday_8 = datetime(2026, 11, 16, 8, 0, tzinfo=LOCAL_TZ)
     assert digest.last_slot([0], 8, wednesday_noon) == monday_8
     # On the day itself, before the hour: last week's slot, not today's.
-    assert digest.last_slot([0], 8, monday_8 - timedelta(minutes=1)) == \
-        monday_8 - timedelta(days=7)
+    assert digest.last_slot([0], 8, monday_8 - timedelta(minutes=1)) ==         monday_8 - timedelta(days=7)
     assert digest.last_slot([0], 8, monday_8) == monday_8
-    assert digest.last_slot([0, 2], 8, wednesday_noon) == \
-        datetime(2026, 11, 18, 8, 0, tzinfo=LOCAL_TZ)
+    assert digest.last_slot([0, 2], 8, wednesday_noon) ==         datetime(2026, 11, 18, 8, 0, tzinfo=LOCAL_TZ)
     assert digest.last_slot([], 8, wednesday_noon) is None
+
+
+def test_describe_schedule():
+    assert digest.describe_schedule([4], 8) == "Friday at 8:00 AM"
+    assert digest.describe_schedule("0,1,2,3,4", 13) == "Weekdays at 1:00 PM"
+    assert digest.describe_schedule([], 8, True) == "on each new ticket"
+    assert digest.describe_schedule([0], 8, True) == "Monday at 8:00 AM + on each new ticket"
+    assert digest.describe_schedule([], 8) == "Only when you press Send"
 
 
 def test_scheduled_digest_fires_once_per_slot(env):
     subscribe(env["root"], "ZachZ")
-    assert digest.run_if_due() is None                      # no schedule yet
-
     now = datetime.now(timezone.utc)
-    env["root"].post("/root/digest/schedule",
-                     data={"days": [str(d) for d in range(7)], "hour": "0"}, **NR)
-    with connect() as conn:
-        assert digest.get_schedule(conn)["days"] == list(range(7))
+    assert digest.run_if_due(now + timedelta(days=8)) is None      # no schedule yet
 
+    set_schedule(env["root"], "ZachZ", days=range(7))
     # Saving a schedule never fires a slot that has already passed.
     assert digest.run_if_due(now) is None
     assert outbox() == []
@@ -214,11 +224,42 @@ def test_scheduled_digest_fires_once_per_slot(env):
     assert digest.run_if_due(tomorrow + timedelta(days=1)) is not None   # next slot
 
 
-def test_ticking_no_days_turns_the_schedule_off(env):
+def test_each_subscriber_has_their_own_schedule(env):
+    """Changing one person's days must not move anyone else's."""
     subscribe(env["root"], "ZachZ")
-    env["root"].post("/root/digest/schedule", data={"days": ["0"], "hour": "8"}, **NR)
-    env["root"].post("/root/digest/schedule", data={"hour": "8"}, **NR)
+    subscribe(env["root"], "mreed")
+    now = datetime.now(timezone.utc)
+    today = now.astimezone(LOCAL_TZ).weekday()
+    in_two_days, in_four_days = (today + 2) % 7, (today + 4) % 7
+    set_schedule(env["root"], "ZachZ", days=[in_two_days])
+    set_schedule(env["root"], "mreed", days=[in_four_days])
+
+    assert digest.run_if_due(now + timedelta(days=1)) is None
+    assert digest.run_if_due(now + timedelta(days=2)).sent == ["zachz@example.gov"]
+    assert digest.run_if_due(now + timedelta(days=4)).sent == ["mreed@example.gov"]
+
+    # Root moves ZachZ to another day: the old day no longer fires for them.
+    set_schedule(env["root"], "ZachZ", days=[in_four_days])
+    with connect() as conn:
+        assert digest.parse_days(digest.get_subscriber(conn, user_id("ZachZ"))["days"])             == [in_four_days]
+        assert digest.parse_days(digest.get_subscriber(conn, user_id("mreed"))["days"])             == [in_four_days]
+
+
+def test_ticking_no_days_turns_a_schedule_off(env):
+    subscribe(env["root"], "ZachZ")
+    set_schedule(env["root"], "ZachZ", days=[0], hour=8)
+    set_schedule(env["root"], "ZachZ", days=[], hour=8)
     assert digest.run_if_due(datetime.now(timezone.utc) + timedelta(days=8)) is None
+
+
+def test_schedule_can_be_set_when_adding(env):
+    env["root"].post("/root/digest/subscribers", data={
+        "user_id": user_id("mreed"), "scope": "own", "email": "mreed@example.gov",
+        "days": ["4"], "hour": "8"}, **NR)
+    with connect() as conn:
+        sub = digest.get_subscriber(conn, user_id("mreed"))
+    assert (sub["days"], sub["hour"], sub["scope"]) == ("4", 8, "own")
+    assert "Friday at 8:00 AM" in env["root"].get("/root/digest").text
 
 
 # ---------------------------------------------------------------- new-ticket notice
@@ -232,7 +273,8 @@ def test_new_ticket_notice_is_off_by_default(env):
 def test_new_ticket_notice_respects_scope_and_skips_the_creator(env):
     subscribe(env["root"], "ZachZ", scope="all")
     subscribe(env["root"], "mreed", scope="own")
-    env["root"].post("/root/digest/schedule", data={"hour": "8", "on_new_ticket": "1"}, **NR)
+    set_schedule(env["root"], "ZachZ", on_new_ticket=True, scope="all")
+    set_schedule(env["root"], "mreed", on_new_ticket=True, scope="own")
 
     new_ticket(env["user"], "Bus 14 validator down")
     mail = outbox()

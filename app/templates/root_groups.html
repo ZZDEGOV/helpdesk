@@ -1,0 +1,92 @@
+{% extends "base.html" %}{% import "_macros.html" as m %}{% set nav='root' %}
+{% block title %}Groups — Help Desk{% endblock %}{% block content %}
+<div class="crumb"><a href="/root">Root</a> / Groups</div>
+<h1>Groups</h1>
+<p class="hint" style="margin-bottom:16px">A group is a team. Its members can see and work
+  every ticket filed under the group. A ticket in no group is seen only by its owner and
+  the admins. Someone can be in more than one group.</p>
+{% if error %}<div class="err" style="margin:12px 0">{{ error }}</div>{% endif %}
+{% if notice %}<div class="panel" style="margin:12px 0"><div class="panel-b">{{ notice }}</div></div>{% endif %}
+
+<div class="grid">
+<div>
+{% for c in cards %}{% set g = c.g %}
+<div class="panel" id="group-{{ g.id }}"><div class="panel-h">{{ g.name }}
+  <span class="sub" style="font-weight:400">{{ g.member_count }} member{{ '' if g.member_count == 1 else 's' }}
+    · {{ g.ticket_count }} ticket{{ '' if g.ticket_count == 1 else 's' }}</span>
+</div><div class="panel-b">
+
+  <label class="f">Members</label>
+  {% for p in c.members %}
+  <div class="row" style="margin-bottom:6px">
+    <span style="flex:1">{{ p.display_name or p.username }}
+      <span class="sub">{{ p.username }} · {{ p.role }}{% if not p.is_active %} · disabled{% endif %}{% if not p.email %} · no email{% endif %}</span></span>
+    <form method="post" action="/root/groups/{{ g.id }}/adopt"
+          data-confirm="Share every ungrouped ticket {{ p.username }} owns with {{ g.name }}? Its members will be able to see and work them.">
+      <input type="hidden" name="user_id" value="{{ p.id }}">
+      <button class="btn btn-sm" title="File this person's ungrouped tickets under the group">Share their tickets</button></form>
+    <form method="post" action="/root/groups/{{ g.id }}/members/{{ p.id }}/remove"
+          data-confirm="Remove {{ p.username }} from {{ g.name }}? They will stop seeing its tickets, except their own.">
+      <button class="btn btn-sm btn-d">Remove</button></form>
+  </div>
+  {% else %}<p class="sub" style="margin:0 0 9px">No members yet.</p>
+  {% endfor %}
+  {% if c.others %}
+  <form method="post" action="/root/groups/{{ g.id }}/members" class="row" style="margin-top:9px">
+    <select name="user_id" required style="flex:1" aria-label="Account to add">
+      <option value="">Add an account…</option>
+      {% for u in c.others %}<option value="{{ u.id }}">{{ u.username }} ({{ u.role }})</option>{% endfor %}
+    </select>
+    <button class="btn btn-sm btn-p">Add to group</button>
+  </form>
+  {% endif %}
+
+  <div style="margin-top:14px;border-top:1px solid var(--rule-2);padding-top:12px">
+    <label class="f">Email digest for this group <span class="sub">— {{ c.when }}</span></label>
+    <form method="post" action="/root/groups/{{ g.id }}/digest">
+      {{ m.schedule_fields(day_names, c.days, g.digest_hour, g.digest_on_new_ticket) }}
+      <div class="row">
+        <button class="btn btn-sm btn-p">Save schedule</button>
+        <a class="btn btn-sm" href="/root/groups/{{ g.id }}/digest/preview" target="_blank">Preview email</a>
+        <button class="btn btn-sm" formaction="/root/groups/{{ g.id }}/digest/send" formnovalidate
+                {{ 'disabled' if not c.reachable }}>Send now</button>
+      </div>
+    </form>
+    <p class="hint">Goes to every member with an email address ({{ c.reachable }} of
+      {{ g.member_count }} right now) and lists this group's open tickets. Tick no days
+      to leave it off.</p>
+  </div>
+
+  <div class="row" style="margin-top:12px;border-top:1px solid var(--rule-2);padding-top:12px">
+    <form method="post" action="/root/groups/{{ g.id }}/rename" class="row" style="flex:1">
+      <input name="name" value="{{ g.name }}" required maxlength="60" style="flex:1" aria-label="Group name">
+      <button class="btn btn-sm">Rename</button></form>
+    <form method="post" action="/root/groups/{{ g.id }}/delete"
+          data-confirm="Delete {{ g.name }}? Its {{ g.ticket_count }} ticket(s) are kept, but go back to being visible only to their owners and admins.">
+      <button class="btn btn-sm btn-d">Delete group</button></form>
+  </div>
+</div></div>
+{% else %}
+<div class="panel"><div class="panel-b sub">No groups yet. Create one on the right.</div></div>
+{% endfor %}
+</div>
+
+<div>
+<div class="panel"><div class="panel-h">New group</div><div class="panel-b">
+  <form method="post" action="/root/groups/create">
+    <div class="field"><label class="f" for="name">Name</label>
+      <input id="name" name="name" required maxlength="60" placeholder="e.g. Fare Systems"></div>
+    <button class="btn btn-p" style="width:100%">Create group</button>
+  </form>
+</div></div>
+
+<div class="panel"><div class="panel-h">How groups work</div><div class="panel-b">
+  <p class="hint" style="margin-top:0">When someone in a group files a ticket, they choose
+    who it is shared with. If they are in exactly one group, that group is preselected.</p>
+  <p class="hint">Tickets filed before the group existed stay private until their owner
+    shares them, or you use <strong>Share their tickets</strong> next to a member.</p>
+  <p class="hint">Admins already see every ticket, with or without groups.</p>
+</div></div>
+</div>
+</div>
+{% endblock %}

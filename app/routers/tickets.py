@@ -5,10 +5,11 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, BackgroundTasks, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import auth, config, digest, repo, threadparse
-from ..deps import (DB, CurrentUser, Restorer, SoftDeleter, ViewableTicket, Worker,
-                    WorkableTicket, ticket_for_worker, visible_owner)
-from ..schemas import FollowUp, MessageCreate, StatusChange, TicketCreate, TicketUpdate
+from .. import auth, config, digest, groups, repo, threadparse
+from ..deps import (DB, CurrentUser, Forbidden, Restorer, SoftDeleter, ViewableTicket,
+                    Worker, WorkableTicket, ticket_for_worker, viewer_id)
+from ..schemas import (FollowUp, GroupChange, MessageCreate, StatusChange, TicketCreate,
+                       TicketUpdate)
 from ..web import render, see_other, to_utc
 
 router = APIRouter(tags=["tickets"])
@@ -27,26 +28,33 @@ def _back(ticket_id: int) -> RedirectResponse:
 @router.get("/", response_class=HTMLResponse, summary="Ticket list and dashboard")
 def index(request: Request, conn: DB, user: CurrentUser,
           status: str = "open", priority: str = "", category: str = "",
-          channel: str = "", q: str = "", sort: SortKey = "priority", overdue: str = ""):
-    """Users see the tickets they own; admins and root see every ticket.
+          channel: str = "", q: str = "", sort: SortKey = "priority", overdue: str = "",
+          show: str = ""):
+    """Users see the tickets they own plus those filed under a group they belong
+    to; admins and root see every ticket.
 
     `status` takes a status key, `open` (any unfinished status), `actionable`
-    (the clock is running), or blank for all."""
+    (the clock is running), or blank for all. `show` narrows the list to `mine`
+    or to one group's id."""
     # Blank dropdowns submit "" -- coerce here rather than rejecting the request.
     pri = int(priority) if priority.strip().isdigit() else None
     overdue_only = overdue.strip() in ("1", "true", "on", "yes")
-    owner = visible_owner(user)
+    viewer = viewer_id(user)
+    show = show.strip()
     tickets = repo.list_tickets(
         conn, status=status or None, priority=pri, category=category or None,
         channel=channel or None, q=q or None, overdue_only=overdue_only, sort=sort,
-        owner_id=owner)
+        viewer_id=viewer, owner_id=user["id"] if show == "mine" else None,
+        group_id=int(show) if show.isdigit() else None)
     return render(request, "index.html", {
         "tickets": tickets,
-        "stats": repo.dashboard_stats(conn, owner),
-        "follow_ups": repo.due_follow_ups(conn, owner),
+        "stats": repo.dashboard_stats(conn, viewer),
+        "follow_ups": repo.due_follow_ups(conn, viewer),
         "categories": repo.all_categories(conn),
+        "groups": groups.selectable(conn, user),
         "filters": {"status": status, "priority": pri, "category": category,
-                    "channel": channel, "q": q, "sort": sort, "overdue": overdue_only},
+                    "channel": channel, "q": q, "sort": sort, "overdue": overdue_only,
+                    "show": show},
     })
 
 
@@ -54,16 +62,31 @@ def index(request: Request, conn: DB, user: CurrentUser,
 
 @router.get("/tickets/new", response_class=HTMLResponse, summary="New ticket form")
 def new_ticket_form(request: Request, conn: DB, user: Worker):
-    return render(request, "ticket_new.html", {"categories": repo.all_categories(conn)})
+    """Someone in exactly one group has it preselected, so a team's tickets are
+    shared unless the person filing chooses otherwise."""
+    mine = groups.groups_of(conn, user["id"])
+    return render(request, "ticket_new.html", {
+        "categories": repo.all_categories(conn),
+        "groups": groups.selectable(conn, user),
+        "default_group": mine[0]["id"] if len(mine) == 1 else None})
+
+
+def _check_group(conn, user, group_id: int | None) -> None:
+    """A ticket can only be put in a group the person belongs to (admins: any)."""
+    if group_id is not None and group_id not in {g["id"] for g in groups.selectable(conn, user)}:
+        raise Forbidden("You can't share a ticket with a group you aren't in.")
 
 
 @router.post("/tickets/new", **Redirect, summary="Create a ticket")
 def new_ticket(form: Annotated[TicketCreate, Form()], conn: DB, user: Worker,
                background: BackgroundTasks):
     """The creator owns the ticket. The customer is matched on email, or created.
+    `group_id` shares it with that group's members; leave it out to keep the
+    ticket to yourself.
 
     If root has turned on new-ticket emails, digest subscribers are notified
     after the response is sent, so a slow mail server never delays the page."""
+    _check_group(conn, user, form.group_id)
     ticket_id = repo.create_ticket(
         conn, subject=form.subject, body=form.body or None,
         customer_email=form.customer_email or None, customer_name=form.customer_name or None,
@@ -73,7 +96,7 @@ def new_ticket(form: Annotated[TicketCreate, Form()], conn: DB, user: Worker,
         logged_by=form.logged_by or None, received_at=to_utc(form.received_at),
         due_at=to_utc(form.due_at, end_of_day=True),
         tags=[t.strip() for t in form.tags.split(",") if t.strip()],
-        owner_id=user["id"])
+        owner_id=user["id"], group_id=form.group_id)
     background.add_task(digest.notify_new_ticket, ticket_id)
     return _back(ticket_id)
 
@@ -90,7 +113,7 @@ def ticket_detail(request: Request, ticket: ViewableTicket, conn: DB, user: Curr
     history = []
     if ticket["customer_id"]:
         history = [t for t in repo.list_tickets(conn, customer_id=ticket["customer_id"],
-                                                sort="newest", owner_id=visible_owner(user))
+                                                sort="newest", viewer_id=viewer_id(user))
                    if t["id"] != ticket_id]
     drafted = ""
     if template_id.strip().isdigit():
@@ -110,7 +133,16 @@ def ticket_detail(request: Request, ticket: ViewableTicket, conn: DB, user: Curr
         "categories": repo.all_categories(conn),
         "templates_list": repo.list_templates(conn),
         "history": history, "drafted": drafted,
+        "groups": groups.selectable(conn, user),
+        "can_regroup": _can_regroup(user, ticket),
     })
+
+
+def _can_regroup(user, ticket) -> bool:
+    """Only the owner or an admin decides who a ticket is shared with -- a
+    teammate who can work it shouldn't be able to pull it out of the team."""
+    return auth.can(user, "work_tickets") and (
+        ticket["owner_id"] == user["id"] or auth.can(user, "view_all_tickets"))
 
 
 # ---------------------------------------------------------------- work
@@ -127,6 +159,18 @@ def update_ticket(ticket: WorkableTicket, form: Annotated[TicketUpdate, Form()],
     changes = form.model_dump()
     changes["due_at"] = to_utc(form.due_at, end_of_day=True)
     repo.update_fields(conn, ticket["id"], changes)
+    return _back(ticket["id"])
+
+
+@router.post("/tickets/{ticket_id}/group", **Redirect, summary="Change who a ticket is shared with")
+def change_group(ticket: WorkableTicket, form: Annotated[GroupChange, Form()], conn: DB,
+                 user: Worker):
+    """Owner or admin only. A blank `group_id` makes the ticket private to its owner."""
+    if not _can_regroup(user, ticket):
+        raise Forbidden("Only the ticket's owner or an admin can change who it is shared with.",
+                        back=f"/tickets/{ticket['id']}")
+    _check_group(conn, user, form.group_id)
+    repo.set_group(conn, ticket["id"], form.group_id)
     return _back(ticket["id"])
 
 

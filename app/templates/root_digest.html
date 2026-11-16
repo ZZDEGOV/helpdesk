@@ -1,54 +1,61 @@
-{% extends "base.html" %}{% set nav='root' %}
+{% extends "base.html" %}{% import "_macros.html" as m %}{% set nav='root' %}
 {% block title %}Email digest — Help Desk{% endblock %}{% block content %}
 <div class="crumb"><a href="/root">Root</a> / Email digest</div>
 <h1>Open-ticket digest</h1>
 <p class="hint" style="margin-bottom:16px">An email listing the tickets that are still open.
-  Only the people you add below receive it.</p>
+  Only the people you add here receive it, each on their own schedule. To email a whole
+  team, turn on that group's digest on the <a href="/root/groups">Groups</a> page.</p>
 {% if error %}<div class="err" style="margin:12px 0">{{ error }}</div>{% endif %}
 {% if notice %}<div class="panel" style="margin:12px 0"><div class="panel-b">{{ notice }}</div></div>{% endif %}
 
 <div class="grid">
 <div>
-<div class="panel"><div class="panel-h">Subscribers
-  {% if subscribers %}
+{% if subscribers %}
+<div class="row" style="margin-bottom:12px">
+  <strong>{{ subscribers|length }} subscriber{{ '' if subscribers|length == 1 else 's' }}</strong>
   <form method="post" action="/root/digest/send" class="right"
-        data-confirm="Send the digest to every subscriber now?">
-    <button class="btn btn-sm btn-p">Send now to everyone</button></form>
-  {% endif %}
+        data-confirm="Send the digest to every subscriber now, regardless of schedule?">
+    <button class="btn btn-sm">Send now to all subscribers</button></form>
 </div>
-<table><thead><tr>
-  <th>Account</th><th>Email</th><th style="width:230px">Sees</th><th style="width:190px"></th>
-</tr></thead><tbody>
+{% endif %}
+
 {% for s in subscribers %}{% set u = s.row %}
-<tr>
-  <td>{{ u.display_name or u.username }}
-    <span class="sub">{{ u.username }} · {{ u.role }}</span></td>
-  <td>{% if s.skip %}<span class="pill s-waiting_customer">{{ s.skip }}</span>
-      {% else %}<span class="mono">{{ u.email }}</span>{% endif %}</td>
-  <td><form method="post" action="/root/digest/subscribers/{{ u.user_id }}/scope" class="row">
-    <select name="scope" style="flex:1">{% for key, label in scope_labels.items() %}
-      <option value="{{ key }}" {{ 'selected' if key==u.scope }}>{{ label }}</option>
-    {% endfor %}</select>
-    <button class="btn btn-sm">Save</button></form></td>
-  <td><div class="row">
-    <a class="btn btn-sm" href="/root/digest/preview/{{ u.user_id }}" target="_blank">Preview</a>
+<div class="panel" id="sub-{{ u.user_id }}"><div class="panel-h">{{ u.display_name or u.username }}
+  <span class="sub" style="font-weight:400">{{ u.username }} · {{ u.role }}</span>
+  {% if s.skip %}<span class="pill s-waiting_customer">{{ s.skip }}</span>{% endif %}
+  <span class="right sub" style="font-weight:400">{{ s.when }}</span>
+</div><div class="panel-b">
+  <p class="hint" style="margin:0 0 11px">
+    {% if u.email %}<span class="mono">{{ u.email }}</span>{% else %}No email address — set one on the <a href="/root/users">Accounts</a> page.{% endif %}
+    {% if s.groups %} · in {{ s.groups | join(', ') }}{% endif %}</p>
+  <form method="post" action="/root/digest/subscribers/{{ u.user_id }}/update">
+    <div class="field"><label class="f">Sees</label>
+      <select name="scope">{% for key, label in scope_labels.items() %}
+        <option value="{{ key }}" {{ 'selected' if key==u.scope }}>{{ label }}</option>
+      {% endfor %}</select></div>
+    <label class="f">Send on</label>
+    {{ m.schedule_fields(day_names, s.days, u.hour, u.on_new_ticket) }}
+    <button class="btn btn-sm btn-p">Save</button>
+  </form>
+  <div class="row" style="margin-top:11px;border-top:1px solid var(--rule-2);padding-top:11px">
+    <a class="btn btn-sm" href="/root/digest/preview/{{ u.user_id }}" target="_blank">Preview email</a>
     <form method="post" action="/root/digest/send">
       <input type="hidden" name="user_id" value="{{ u.user_id }}">
-      <button class="btn btn-sm">Send</button></form>
-    <form method="post" action="/root/digest/subscribers/{{ u.user_id }}/remove"
+      <button class="btn btn-sm">Send now</button></form>
+    <form method="post" action="/root/digest/subscribers/{{ u.user_id }}/remove" class="right"
           data-confirm="Stop sending the digest to {{ u.username }}?">
       <button class="btn btn-sm btn-d">Remove</button></form>
-  </div></td>
-</tr>
-{% else %}<tr><td colspan="4" class="sub" style="padding:20px">Nobody yet. Add someone on the right.</td></tr>
+  </div>
+</div></div>
+{% else %}
+<div class="panel"><div class="panel-b sub">Nobody yet. Add someone on the right.</div></div>
 {% endfor %}
-</tbody></table></div>
 
 <div class="panel"><div class="panel-h">Recent sends</div>
 <table><tbody>
 {% for a in sends %}
 <tr><td class="mono sub nowrap" style="width:150px">{{ a.created_at | dt }}</td>
-  <td style="width:150px">{{ a.target }}</td>
+  <td style="width:170px">{{ a.target }}</td>
   <td class="sub">{{ a.detail }}</td></tr>
 {% else %}<tr><td class="sub" style="padding:20px">Nothing sent yet.</td></tr>{% endfor %}
 </tbody></table></div>
@@ -69,35 +76,23 @@
     <div class="field"><label class="f" for="scope">Sees</label>
       <select id="scope" name="scope">{% for key, label in scope_labels.items() %}
         <option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
+    <label class="f">Send on</label>
+    {{ m.schedule_fields(day_names, [0], 8, false) }}
     <button class="btn btn-p" style="width:100%">Add</button>
   </form>
   <p class="hint">Only enabled accounts can be added. Disabling or deleting an account
-    stops its emails.</p>
+    stops its emails. Times are {{ config.TIMEZONE }}. Tick no days for someone who
+    should only get it when you press Send.</p>
 </div></div>
 
-<div class="panel"><div class="panel-h">Schedule</div><div class="panel-b">
-  <form method="post" action="/root/digest/schedule">
-    <label class="f">Send on</label>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-bottom:13px">
-      {% for name in day_names %}
-      <label style="font-size:13px;display:flex;gap:7px;align-items:center">
-        <input type="checkbox" name="days" value="{{ loop.index0 }}" style="width:auto"
-               {{ 'checked' if loop.index0 in schedule.days }}>{{ name }}</label>
-      {% endfor %}
-    </div>
-    <div class="field"><label class="f" for="hour">At</label>
-      <select id="hour" name="hour">{% for h in range(24) %}
-        <option value="{{ h }}" {{ 'selected' if h==schedule.hour }}>{{ '%d:00 %s' | format(h % 12 or 12, 'AM' if h < 12 else 'PM') }}</option>
-      {% endfor %}</select></div>
-    <label style="font-size:13px;display:flex;gap:7px;align-items:center;margin-bottom:11px">
-      <input type="checkbox" name="on_new_ticket" value="1" style="width:auto"
-             {{ 'checked' if schedule.on_new_ticket }}>
-      Also email when a ticket is created</label>
-    <button class="btn btn-sm">Save schedule</button>
-  </form>
-  <p class="hint">Now: {{ schedule_text }}{{ ', plus every new ticket' if schedule.on_new_ticket }}.
-    Times are {{ config.TIMEZONE }}. Tick no days to turn the schedule off. New-ticket
-    emails go only to subscribers who see every ticket, and never to the ticket's creator.</p>
+<div class="panel"><div class="panel-h">Group digests
+  <a class="right btn btn-sm" href="/root/groups">Groups</a></div><div class="panel-b">
+  {% for g in group_digests %}
+  <div style="margin-bottom:7px"><a href="/root/groups#group-{{ g.id }}">{{ g.name }}</a>
+    <span class="sub">{{ g.member_count }} member{{ '' if g.member_count == 1 else 's' }} ·
+      {{ describe(g.digest_days, g.digest_hour, g.digest_on_new_ticket) }}</span></div>
+  {% else %}<p class="sub" style="margin:0">No group has a digest turned on.</p>
+  {% endfor %}
 </div></div>
 
 <div class="panel"><div class="panel-h">Delivery</div><div class="panel-b">
@@ -110,6 +105,8 @@
   {% if not config.BASE_URL %}
   <p class="hint">HELPDESK_BASE_URL is not set, so the emails have no links to tickets.</p>
   {% endif %}
+  <p class="hint">New-ticket emails never go to the person who created the ticket, and
+    only to people whose setting lets them see it.</p>
 </div></div>
 </div>
 </div>

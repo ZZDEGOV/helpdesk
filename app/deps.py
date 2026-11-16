@@ -118,8 +118,9 @@ CustomerViewer = Annotated[sqlite3.Row, require("view_customers")]
 RootUser = Annotated[sqlite3.Row, require("manage_users")]
 
 
-def visible_owner(user: sqlite3.Row) -> int | None:
-    """The owner_id to scope ticket queries by: None means "all tickets"."""
+def viewer_id(user: sqlite3.Row) -> int | None:
+    """What to scope ticket queries by: None means "all tickets", otherwise the
+    user whose own and group tickets should be returned (repo's viewer_id)."""
     return None if auth.can(user, "view_all_tickets") else user["id"]
 
 
@@ -127,8 +128,8 @@ def visible_owner(user: sqlite3.Row) -> int | None:
 
 def _viewable_ticket(ticket_id: int, conn: DB, user: CurrentUser) -> sqlite3.Row:
     ticket = repo.get_ticket(conn, ticket_id)
-    # Same answer for "missing" and "not yours", so ticket ids can't be probed.
-    if ticket is None or not auth.can_view_ticket(user, ticket):
+    # Same answer for "missing" and "not visible to you", so ticket ids can't be probed.
+    if ticket is None or not auth.can_view_ticket(conn, user, ticket):
         raise NotFound()
     return ticket
 
@@ -146,6 +147,6 @@ def ticket_for_worker(conn: Connection, user: sqlite3.Row, ticket_id: int | None
     """For routes keyed by an event or question id: resolve and check the ticket
     it belongs to."""
     ticket = repo.get_ticket(conn, ticket_id) if ticket_id else None
-    if ticket is None or not auth.can_view_ticket(user, ticket):
+    if ticket is None or not auth.can_view_ticket(conn, user, ticket):
         raise NotFound()
     return ticket["id"]

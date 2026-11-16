@@ -50,6 +50,15 @@
   <select name="category"><option value="">Any category</option>
     {% for c in categories %}<option value="{{ c }}" {{ 'selected' if filters.category==c }}>{{ c }}</option>{% endfor %}
   </select>
+  {% if groups %}
+  <select name="show" aria-label="Whose tickets">
+    <option value="">Everything I can see</option>
+    <option value="mine" {{ 'selected' if filters.show=='mine' }}>Mine only</option>
+    {% for g in groups %}
+    <option value="{{ g.id }}" {{ 'selected' if filters.show==g.id|string }}>Group: {{ g.name }}</option>
+    {% endfor %}
+  </select>
+  {% endif %}
   <select name="sort">
     <option value="priority" {{ 'selected' if filters.sort=='priority' }}>Priority</option>
     <option value="due" {{ 'selected' if filters.sort=='due' }}>Due date</option>
@@ -79,7 +88,9 @@
     <a class="subj" href="/tickets/{{ t.id }}">{{ t.subject }}</a>
     <span class="sub">{{ config.CHANNEL_LABELS.get(t.channel, t.channel) }}
       {%- if t.category %} · {{ t.category }}{% endif %}
-      {%- if t.ada %} · <span class="badge-ada">ADA</span>{% endif %}</span>
+      {%- if t.ada %} · <span class="badge-ada">ADA</span>{% endif %}
+      {%- if t.group_name %} · {{ t.group_name }}{% endif %}
+      {%- if t.owner_id != current_user(request).id and t.owner_username %} · owner {{ t.owner_username }}{% endif %}</span>
   </td>
   <td>{% if t.customer_name %}{{ t.customer_name }}<br>{% endif %}
     <span class="sub mono">{{ t.customer_email or '—' }}</span></td>

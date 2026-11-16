@@ -1,5 +1,29 @@
 # Changelog
 
+## v3.3 — Groups and per-person digest schedules
+
+Schema version 5 (applied automatically on start): new `user_groups` and
+`group_members` tables, a `group_id` on tickets, and a schedule on each digest
+subscriber. No existing ticket changes visibility until someone shares it.
+
+### Groups
+Root creates groups (teams) and chooses their members under **Root → Groups**.
+A ticket filed under a group can be seen and worked by all of its members;
+a ticket in no group stays private to its owner and the admins, as before.
+The new-ticket form and each ticket page have a *Shared with* box, and the ticket
+list can be filtered to *Mine only* or one group. Root can share a member's
+existing tickets with a group in one step.
+
+### Digest
+- **Each subscriber has their own schedule**, edited in place on the Email digest
+  page. The single shared schedule is gone; existing subscribers keep it as their
+  starting point.
+- New scope: *their own and their groups' tickets*.
+- **Group digests:** a group can have its own schedule, sent to every member with
+  an email address and listing that group's open tickets.
+- New-ticket emails now reach anyone whose settings let them see the ticket, and
+  nobody gets two emails about the same ticket.
+
 ## v3.2 — Drop-folder delivery
 
 New `HELPDESK_MAIL_MODE=folder`: each digest email is written as a `.json` file

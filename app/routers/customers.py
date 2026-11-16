@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from .. import auth, repo
 from ..db import utcnow
-from ..deps import DB, CustomerViewer, NotFound, Restorer, SoftDeleter, Worker, visible_owner
+from ..deps import DB, CustomerViewer, NotFound, Restorer, SoftDeleter, Worker, viewer_id
 from ..schemas import ContactChange, CustomerEdit
 from ..web import render, see_other
 
@@ -31,7 +31,7 @@ def _customer(conn, customer_id: int):
 @router.get("", response_class=HTMLResponse, summary="Customer directory")
 def customers_page(request: Request, conn: DB, user: CustomerViewer, q: str = ""):
     return render(request, "customers.html", {
-        "customers": repo.list_customers(conn, q or None, owner_id=visible_owner(user)),
+        "customers": repo.list_customers(conn, q or None, viewer_id=viewer_id(user)),
         "q": q})
 
 
@@ -42,7 +42,7 @@ def customer_detail(request: Request, customer_id: int, conn: DB, user: Customer
     return render(request, "customer_detail.html", {
         "c": customer,
         "tickets": repo.list_tickets(conn, customer_id=customer_id, sort="newest",
-                                     owner_id=visible_owner(user)),
+                                     viewer_id=viewer_id(user)),
         "emails": repo.customer_emails(conn, customer_id),
         "phones": repo.customer_phones(conn, customer_id),
         "others": [x for x in repo.list_customers(conn) if x["id"] != customer_id],

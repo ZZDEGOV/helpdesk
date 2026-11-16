@@ -36,12 +36,36 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at TEXT NOT NULL
 );
 
+-- Groups (teams). A ticket placed in a group is visible to its members. The
+-- digest_* columns are the group's own email schedule (see digest.py).
+CREATE TABLE IF NOT EXISTS user_groups (
+    id                   INTEGER PRIMARY KEY,
+    name                 TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    digest_days          TEXT NOT NULL DEFAULT '',
+    digest_hour          INTEGER NOT NULL DEFAULT 8,
+    digest_on_new_ticket INTEGER NOT NULL DEFAULT 0,
+    digest_mark          TEXT,
+    created_at           TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS group_members (
+    group_id INTEGER NOT NULL REFERENCES user_groups(id) ON DELETE CASCADE,
+    user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (group_id, user_id)
+);
+
 -- Who receives the open-ticket digest. Root picks each one by hand.
--- scope: 'all' = every open ticket, 'own' = only the tickets that user owns.
+-- scope: 'all' = every open ticket, 'team' = their own plus their groups',
+--        'own' = only the tickets that user owns.
+-- days/hour/on_new_ticket/mark: that person's schedule (see digest.py).
 CREATE TABLE IF NOT EXISTS digest_subscribers (
-    user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    scope      TEXT NOT NULL DEFAULT 'all',
-    created_at TEXT NOT NULL
+    user_id       INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    scope         TEXT NOT NULL DEFAULT 'all',
+    days          TEXT NOT NULL DEFAULT '',
+    hour          INTEGER NOT NULL DEFAULT 8,
+    on_new_ticket INTEGER NOT NULL DEFAULT 0,
+    mark          TEXT,
+    created_at    TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -92,6 +116,8 @@ CREATE TABLE IF NOT EXISTS tickets (
     customer_id     INTEGER REFERENCES customers(id) ON DELETE SET NULL,
     owner_id        INTEGER REFERENCES users(id) ON DELETE SET NULL,
     assignee_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    -- NULL = private to the owner (plus admins); otherwise the group's members see it too
+    group_id        INTEGER REFERENCES user_groups(id) ON DELETE SET NULL,
 
     subject         TEXT NOT NULL,
     body            TEXT,
@@ -200,3 +226,5 @@ CREATE INDEX IF NOT EXISTS idx_questions_ticket  ON questions(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires   ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_tickets_owner      ON tickets(owner_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created      ON audit_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_tickets_group      ON tickets(group_id);
+CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);

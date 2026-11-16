@@ -120,28 +120,49 @@ Caddy) and set `HELPDESK_SECURE_COOKIES=true`.
 
 | | Sees tickets | Works tickets | Trash | Accounts |
 |---|---|---|---|---|
-| **User** | Their own | Yes | No | No |
+| **User** | Their own, plus their groups' | Yes | No | No |
 | **Admin** | All | Yes | Queue deletions, restore | No |
-| **Root** | All (read-only, audited) | No | Restore, delete permanently | Yes |
+| **Root** | All (read-only, audited) | No | Restore, delete permanently | Yes, and groups |
 
 A ticket belongs to whoever created it. The customer directory is shared by
 everyone. Root creates accounts with a temporary password, and the user picks their
 own at first sign-in. Password resets also go through root; an account's optional
 email address is only used for the digest below.
 
+### Groups
+
+A group is a team, set up by root under **Groups**. Someone can be in several.
+
+- **Members see and work every ticket filed under their group.** A ticket in no
+  group is seen only by its owner and the admins.
+- **Filing:** the new-ticket form has a *Shared with* box listing your groups. If
+  you are in exactly one, it is preselected; pick *Only me* to keep a ticket private.
+- **Changing it later:** the ticket's owner (or an admin) can share or unshare it
+  from the *Shared with* panel on the ticket. A teammate can work the ticket but
+  can't take it out of the group.
+- **Older tickets:** tickets filed before a group existed stay private until their
+  owner shares them, or root presses **Share their tickets** next to a member.
+- **The list:** a *Whose tickets* filter narrows it to *Mine only* or one group.
+- Removing someone from a group ends their access to its tickets (except their
+  own). Deleting a group keeps its tickets and makes them private again.
+
 ### Open-ticket digest
 
-An email listing the tickets that are still open, set up by root under
-**Email digest**.
+An email listing the tickets that are still open. Root sets up two kinds of
+recipient, and nobody is ever included because of their role:
 
-- **Who gets it:** only the accounts root adds. Nobody is subscribed because of
-  their role. Disabling or deleting an account stops its emails.
-- **What each person sees:** root picks per subscriber: *every open ticket*, or
-  *only tickets they own*.
-- **When:** on the weekdays and hour root ticks, whenever root presses **Send now**,
-  and optionally each time a ticket is created (those go only to subscribers who see
-  every ticket, and not to the ticket's creator).
-- **Preview** shows the exact email for a subscriber without sending anything.
+- **Subscribers** (**Email digest** page): individual accounts root adds. Each has
+  a scope root picks (*every open ticket*, *their own and their groups' tickets*, or
+  *only tickets they own*) and **their own schedule**.
+- **Group digests** (**Groups** page): switch one on for a group and every member
+  with an email address gets that group's open tickets. People added to the group
+  later are included automatically.
+
+A schedule is a set of weekdays and an hour, plus an optional email each time a
+ticket is created. New-ticket emails go only to people who can see the ticket, never
+to its creator, and never twice to the same person. **Send now** ignores the
+schedule; **Preview** shows the exact email without sending anything. Disabling or
+deleting an account stops its emails.
 
 How the email is delivered is `HELPDESK_MAIL_MODE`:
 

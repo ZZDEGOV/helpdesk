@@ -17,6 +17,7 @@ from .deps import (CurrentUser, Forbidden, LoginRequired, NotFound,
                    PasswordChangeRequired, SetupRequired)
 from .routers import accounts, api, customers, replies, root, tickets, trash
 from .routers import digest as digest_routes
+from .routers import groups as group_routes
 from .web import BASE, render
 
 log = logging.getLogger("helpdesk")
@@ -71,7 +72,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Transit Systems Help Desk",
-    version="3.2.0",
+    version="3.3.0",
     summary="Ticket tracking with a pausable SLA clock.",
     description="Most routes serve HTML pages and form posts; `/api/v1` returns JSON. "
                 "Everything except `/health` requires signing in.",
@@ -80,8 +81,8 @@ app = FastAPI(
         {"name": "customers", "description": "The shared customer directory."},
         {"name": "saved replies", "description": "Reply templates with placeholders."},
         {"name": "trash", "description": "Queued deletions (admin)."},
-        {"name": "root", "description": "Accounts, analytics, audit, permanent deletion, "
-                                        "and the open-ticket email digest."},
+        {"name": "root", "description": "Accounts, groups, analytics, audit, permanent "
+                                        "deletion, and the open-ticket email digest."},
         {"name": "accounts", "description": "Setup, sign-in, passwords."},
         {"name": "api", "description": "Read-only JSON."},
     ],
@@ -90,7 +91,7 @@ app = FastAPI(
 )
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
-for module in (accounts, tickets, customers, replies, trash, root, digest_routes, api):
+for module in (accounts, tickets, customers, replies, trash, root, digest_routes, group_routes, api):
     app.include_router(module.router)
 
 

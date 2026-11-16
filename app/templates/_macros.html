@@ -22,3 +22,24 @@
     <span class="sla-legend" title="Active working time">{{ secs | duration }}</span>
   {% endif %}
 {% endmacro %}
+
+{# Weekday tick-boxes, an hour, and the new-ticket option: one digest schedule.
+   Used for each subscriber and each group. `days` is a list of ints (0 = Monday). #}
+{% macro schedule_fields(day_names, days, hour, on_new_ticket) %}
+<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-bottom:9px">
+  {% for name in day_names %}
+  <label style="font-size:13px;display:flex;gap:5px;align-items:center">
+    <input type="checkbox" name="days" value="{{ loop.index0 }}" style="width:auto"
+           {{ 'checked' if loop.index0 in days }}>{{ name[:3] }}</label>
+  {% endfor %}
+</div>
+<div class="row" style="margin-bottom:9px">
+  <label style="font-size:13px">at</label>
+  <select name="hour" style="width:auto" aria-label="Hour">{% for h in range(24) %}
+    <option value="{{ h }}" {{ 'selected' if h==hour }}>{{ '%d:00 %s' | format(h % 12 or 12, 'AM' if h < 12 else 'PM') }}</option>
+  {% endfor %}</select>
+  <label style="font-size:13px;display:flex;gap:5px;align-items:center">
+    <input type="checkbox" name="on_new_ticket" value="1" style="width:auto"
+           {{ 'checked' if on_new_ticket }}>and on each new ticket</label>
+</div>
+{% endmacro %}

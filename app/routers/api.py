@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Query
 
 from .. import repo
-from ..deps import DB, CurrentUser, ViewableTicket, visible_owner
+from ..deps import DB, CurrentUser, ViewableTicket, viewer_id
 from ..schemas import EventOut, TicketDetail, TicketSummary, UserOut
 
 router = APIRouter(prefix="/api/v1", tags=["api"])
@@ -39,10 +39,11 @@ def list_tickets(
     sort: Literal["priority", "due", "newest", "oldest", "updated"] = "priority",
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ):
-    """Users get the tickets they own; admins and root get every ticket."""
+    """Users get the tickets they own and their groups' tickets; admins and root
+    get every ticket."""
     rows = repo.list_tickets(conn, status=status or None, q=q, customer_id=customer_id,
                              overdue_only=overdue, sort=sort, limit=limit,
-                             owner_id=visible_owner(user))
+                             viewer_id=viewer_id(user))
     return [_summary(t) for t in rows]
 
 

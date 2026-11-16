@@ -108,6 +108,44 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             scope      TEXT NOT NULL DEFAULT 'all',
             created_at TEXT NOT NULL)""",
     ]),
+    (5, [
+        # --- groups (teams) ---------------------------------------------------
+        # A ticket placed in a group is visible to that group's members. Each
+        # group can also have its own digest schedule.
+        """CREATE TABLE IF NOT EXISTS user_groups (
+            id                   INTEGER PRIMARY KEY,
+            name                 TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            digest_days          TEXT NOT NULL DEFAULT '',
+            digest_hour          INTEGER NOT NULL DEFAULT 8,
+            digest_on_new_ticket INTEGER NOT NULL DEFAULT 0,
+            digest_mark          TEXT,
+            created_at           TEXT NOT NULL)""",
+        """CREATE TABLE IF NOT EXISTS group_members (
+            group_id INTEGER NOT NULL REFERENCES user_groups(id) ON DELETE CASCADE,
+            user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            PRIMARY KEY (group_id, user_id))""",
+        "ALTER TABLE tickets ADD COLUMN group_id INTEGER"
+        " REFERENCES user_groups(id) ON DELETE SET NULL",
+        "CREATE INDEX IF NOT EXISTS idx_tickets_group ON tickets(group_id)",
+        "CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id)",
+        # --- per-subscriber digest schedule -----------------------------------
+        # v3.1 had one schedule for everyone, kept in meta. Each subscriber now
+        # has their own; existing subscribers start with the old shared one. The
+        # meta rows are left in place so rolling back to v3.2 still finds them.
+        "ALTER TABLE digest_subscribers ADD COLUMN days TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE digest_subscribers ADD COLUMN hour INTEGER NOT NULL DEFAULT 8",
+        "ALTER TABLE digest_subscribers ADD COLUMN on_new_ticket INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE digest_subscribers ADD COLUMN mark TEXT",
+        """UPDATE digest_subscribers SET
+            days = COALESCE((SELECT value FROM meta WHERE key = 'digest_days'), ''),
+            hour = COALESCE(CAST((SELECT value FROM meta WHERE key = 'digest_hour')
+                                 AS INTEGER), 8),
+            on_new_ticket = CASE WHEN (SELECT value FROM meta
+                                       WHERE key = 'digest_on_new_ticket') = '1'
+                                 THEN 1 ELSE 0 END,
+            mark = (SELECT value FROM meta WHERE key = 'digest_mark')
+           WHERE mark IS NULL AND days = ''""",
+    ]),
 ]
 
 # Migration 3 also rebuilds the tickets table to drop its CHECK constraints.

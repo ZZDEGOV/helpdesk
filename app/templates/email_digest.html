@@ -6,7 +6,7 @@
 <body style="margin:0;padding:20px;background:#F4F5F7;font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1B2430">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:760px;margin:0 auto;background:#FFFFFF;border:1px solid #D9DEE5">
 <tr><td style="padding:18px 22px;border-bottom:3px solid #15599E">
-  <div style="font-size:12px;letter-spacing:.08em;color:#5B6675">TRANSIT SYSTEMS HELP DESK{% if config.ENV != 'production' %} &middot; {{ config.ENV | upper }} (TEST DATA){% endif %}</div>
+  <div style="font-size:12px;letter-spacing:.08em;color:#5B6675">TRANSIT SYSTEMS HELP DESK{% if label %} &middot; {{ label | upper }}{% endif %}{% if config.ENV != 'production' %} &middot; {{ config.ENV | upper }} (TEST DATA){% endif %}</div>
   <div style="font-size:20px;font-weight:600;margin-top:4px">{{ count }}{% if overdue %}, <span style="color:#B3261E">{{ overdue }} overdue</span>{% endif %}</div>
 </td></tr>
 
@@ -52,7 +52,7 @@
 </td></tr>
 
 <tr><td style="padding:12px 22px;border-top:1px solid #D9DEE5;font-size:12px;color:#5B6675">
-  Sent to {{ name }} by the Help Desk. This list shows {{ scope_label }}, sorted by priority.
+  Sent to {{ name }} by the Help Desk. This list shows {{ scope_text }}, sorted by priority.
   {% if config.BASE_URL %}<a href="{{ config.BASE_URL }}" style="color:#15599E">Open the Help Desk</a>.{% endif %}
   To stop receiving it, ask the Help Desk administrator.
 </td></tr>

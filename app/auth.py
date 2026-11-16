@@ -42,9 +42,8 @@ def verify_password(password: str, stored_hash: str | None, salt: str | None) ->
 #            window) and can restore from the trash.
 #   root  -- deletes immediately and permanently, from its own admin area.
 #
-# Ticket visibility: users see the tickets they own; admin and root see all
-# (view_all_tickets). When groups arrive, can_view_ticket is the one place to
-# widen that.
+# Ticket visibility: users see the tickets they own and the tickets filed under
+# a group they belong to; admin and root see all (view_all_tickets).
 #
 CAPABILITIES: dict[str, set[str]] = {
     "root": {"manage_users", "delete_users", "hard_delete", "view_trash",
@@ -62,10 +61,17 @@ def can(user, capability: str) -> bool:
     return capability in CAPABILITIES.get(user["role"], set())
 
 
-def can_view_ticket(user, ticket) -> bool:
+def can_view_ticket(conn, user, ticket) -> bool:
+    """The single-ticket form of repo._visible -- change them together."""
     if ticket is None or not can(user, "view_tickets"):
         return False
-    return can(user, "view_all_tickets") or ticket["owner_id"] == user["id"]
+    if can(user, "view_all_tickets") or ticket["owner_id"] == user["id"]:
+        return True
+    if ticket["group_id"] is None:
+        return False
+    return bool(conn.execute(
+        "SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?",
+        (ticket["group_id"], user["id"])).fetchone())
 
 
 # ---------------------------------------------------------------- users

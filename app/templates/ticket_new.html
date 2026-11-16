@@ -43,6 +43,17 @@
   </div>
 
   <div>
+    {% if groups %}
+    <div class="panel"><div class="panel-h">Shared with</div><div class="panel-b">
+      <div class="field" style="margin-bottom:0">
+        <select id="group_id" name="group_id" aria-label="Shared with">
+          <option value="">Only me</option>
+          {% for g in groups %}
+          <option value="{{ g.id }}" {{ 'selected' if g.id==default_group }}>{{ g.name }}</option>
+          {% endfor %}</select>
+        <p class="hint">Everyone in the group can see and work the ticket. Admins always can.</p></div>
+    </div></div>
+    {% endif %}
     <div class="panel"><div class="panel-h">Classification</div><div class="panel-b">
       <div class="field"><label class="f" for="channel">Channel</label>
         <select id="channel" name="channel">
