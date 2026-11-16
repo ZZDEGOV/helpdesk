@@ -11,16 +11,18 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, backup, migrate, repo
+from . import auth, backup, digest, migrate, repo
 from .db import connect
 from .deps import (CurrentUser, Forbidden, LoginRequired, NotFound,
                    PasswordChangeRequired, SetupRequired)
 from .routers import accounts, api, customers, replies, root, tickets, trash
+from .routers import digest as digest_routes
 from .web import BASE, render
 
 log = logging.getLogger("helpdesk")
 
 SWEEP_SECONDS = 3600
+DIGEST_SECONDS = 60
 
 
 def sweep_once() -> None:
@@ -44,17 +46,32 @@ async def _sweep_forever() -> None:
         await asyncio.sleep(SWEEP_SECONDS)
 
 
+async def _digest_forever() -> None:
+    """Checks once a minute whether the scheduled digest is due. Its own loop,
+    so an email goes out at 8:00 rather than whenever the hourly sweep wakes."""
+    while True:
+        try:
+            result = await asyncio.to_thread(digest.run_if_due)
+            if result is not None:
+                log.info("scheduled digest: %s", result.summary())
+        except Exception:
+            log.exception("scheduled digest failed")
+        await asyncio.sleep(DIGEST_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     migrate.run(verbose=False)          # idempotent; brings the schema current
-    sweeper = asyncio.create_task(_sweep_forever())
+    tasks = [asyncio.create_task(_sweep_forever()),
+             asyncio.create_task(_digest_forever())]
     yield
-    sweeper.cancel()
+    for task in tasks:
+        task.cancel()
 
 
 app = FastAPI(
     title="Transit Systems Help Desk",
-    version="3.0.0",
+    version="3.1.0",
     summary="Ticket tracking with a pausable SLA clock.",
     description="Most routes serve HTML pages and form posts; `/api/v1` returns JSON. "
                 "Everything except `/health` requires signing in.",
@@ -63,7 +80,8 @@ app = FastAPI(
         {"name": "customers", "description": "The shared customer directory."},
         {"name": "saved replies", "description": "Reply templates with placeholders."},
         {"name": "trash", "description": "Queued deletions (admin)."},
-        {"name": "root", "description": "Accounts, analytics, audit, permanent deletion."},
+        {"name": "root", "description": "Accounts, analytics, audit, permanent deletion, "
+                                        "and the open-ticket email digest."},
         {"name": "accounts", "description": "Setup, sign-in, passwords."},
         {"name": "api", "description": "Read-only JSON."},
     ],
@@ -72,7 +90,7 @@ app = FastAPI(
 )
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
-for module in (accounts, tickets, customers, replies, trash, root, api):
+for module in (accounts, tickets, customers, replies, trash, root, digest_routes, api):
     app.include_router(module.router)
 
 

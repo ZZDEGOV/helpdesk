@@ -2,10 +2,10 @@
 details, timeline, questions, follow-ups, tags, and queued deletion."""
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, BackgroundTasks, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import auth, config, repo, threadparse
+from .. import auth, config, digest, repo, threadparse
 from ..deps import (DB, CurrentUser, Restorer, SoftDeleter, ViewableTicket, Worker,
                     WorkableTicket, ticket_for_worker, visible_owner)
 from ..schemas import FollowUp, MessageCreate, StatusChange, TicketCreate, TicketUpdate
@@ -58,8 +58,12 @@ def new_ticket_form(request: Request, conn: DB, user: Worker):
 
 
 @router.post("/tickets/new", **Redirect, summary="Create a ticket")
-def new_ticket(form: Annotated[TicketCreate, Form()], conn: DB, user: Worker):
-    """The creator owns the ticket. The customer is matched on email, or created."""
+def new_ticket(form: Annotated[TicketCreate, Form()], conn: DB, user: Worker,
+               background: BackgroundTasks):
+    """The creator owns the ticket. The customer is matched on email, or created.
+
+    If root has turned on new-ticket emails, digest subscribers are notified
+    after the response is sent, so a slow mail server never delays the page."""
     ticket_id = repo.create_ticket(
         conn, subject=form.subject, body=form.body or None,
         customer_email=form.customer_email or None, customer_name=form.customer_name or None,
@@ -70,6 +74,7 @@ def new_ticket(form: Annotated[TicketCreate, Form()], conn: DB, user: Worker):
         due_at=to_utc(form.due_at, end_of_day=True),
         tags=[t.strip() for t in form.tags.split(",") if t.strip()],
         owner_id=user["id"])
+    background.add_task(digest.notify_new_ticket, ticket_id)
     return _back(ticket_id)
 
 

@@ -136,12 +136,14 @@ class UserCreate(BaseModel):
     display_name: str = ""
     password: str = Field(description="Temporary; the user must change it at first sign-in")
     role: Role = "user"
+    email: str = Field("", description="Optional; only used for the open-ticket digest")
 
 
 class UserUpdate(BaseModel):
     display_name: str = ""
     role: Role = "user"
     is_active: bool = False
+    email: str | None = Field(None, description="Omit to leave unchanged; blank clears it")
 
 
 class PasswordReset(BaseModel):
@@ -150,6 +152,32 @@ class PasswordReset(BaseModel):
 
 class UserDelete(BaseModel):
     reassign_to: OptionalId = Field(None, description="User to take over their tickets")
+
+
+# ---------------------------------------------------------------- forms: digest
+
+DigestScope = Literal["all", "own"]
+
+
+class DigestSubscribe(BaseModel):
+    user_id: int
+    scope: DigestScope = Field("all", description="all = every open ticket; own = theirs only")
+    email: str = Field("", description="Sets the account's email address, if given")
+
+
+class DigestScopeChange(BaseModel):
+    scope: DigestScope
+
+
+class DigestSchedule(BaseModel):
+    days: list[Annotated[int, Field(ge=0, le=6)]] = Field(
+        default_factory=list, description="0 = Monday ... 6 = Sunday; none = no schedule")
+    hour: int = Field(8, ge=0, le=23, description="Local time, 24h")
+    on_new_ticket: bool = Field(False, description="Also email when a ticket is created")
+
+
+class DigestSend(BaseModel):
+    user_id: OptionalId = Field(None, description="Send to this subscriber only")
 
 
 # ---------------------------------------------------------------- API responses

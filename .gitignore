@@ -7,3 +7,6 @@ __pycache__/
 data/
 .pytest_cache/
 backups/
+# personal ops notes (local only)
+OPS-GUIDE.md
+start-helpdesk.ps1

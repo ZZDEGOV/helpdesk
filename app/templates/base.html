@@ -7,6 +7,10 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+{% if config.ENV != 'production' %}
+<div style="background:#8A5A00;color:#fff;text-align:center;padding:5px 10px;font-size:12px;font-weight:600;letter-spacing:.06em">
+  {{ config.ENV | upper }} — a test copy. Changes here are thrown away and no email is sent.</div>
+{% endif %}
 <header class="topbar">
   <a class="brand" href="/">HELP<span>DESK</span></a>
   {% set me = current_user(request) %}
@@ -15,6 +19,7 @@
       {% if me.role == 'root' %}
         <a href="/root" class="{{ 'on' if nav=='root' }}">Root</a>
         <a href="/root/users">Accounts</a>
+        <a href="/root/digest">Email digest</a>
         <a href="/root/tickets">All tickets</a>
         <a href="/root/customers">All customers</a>
         <a href="/" class="{{ 'on' if nav=='tickets' }}">Tickets (read-only)</a>

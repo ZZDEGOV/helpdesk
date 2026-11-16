@@ -65,7 +65,7 @@ def root_create_user(form: Annotated[UserCreate, Form()], conn: DB, me: RootUser
     try:
         auth.create_user(conn, username=form.username, display_name=form.display_name,
                          password=form.password, role=form.role, created_by=me["id"],
-                         must_change=True)
+                         must_change=True, email=form.email)
     except ValueError as exc:
         return _users_error(str(exc))
     auth.audit(conn, me["id"], "user_created", f"user:{form.username}", f"role={form.role}")
@@ -82,8 +82,11 @@ def root_update_user(user_id: int, form: Annotated[UserUpdate, Form()], conn: DB
         return _users_error("That account no longer exists.")
     if _is_last_root(conn, target) and (form.role != "root" or not form.is_active):
         return _users_error("That is the only root account.")
-    auth.update_user(conn, user_id, display_name=form.display_name, role=form.role,
-                     is_active=form.is_active)
+    try:
+        auth.update_user(conn, user_id, display_name=form.display_name, role=form.role,
+                         is_active=form.is_active, email=form.email)
+    except ValueError as exc:
+        return _users_error(str(exc))
     auth.audit(conn, me["id"], "user_updated", f"user:{target['username']}",
                f"role={form.role} active={form.is_active}")
     return see_other("/root/users")

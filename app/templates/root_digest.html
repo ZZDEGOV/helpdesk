@@ -1,0 +1,116 @@
+{% extends "base.html" %}{% set nav='root' %}
+{% block title %}Email digest — Help Desk{% endblock %}{% block content %}
+<div class="crumb"><a href="/root">Root</a> / Email digest</div>
+<h1>Open-ticket digest</h1>
+<p class="hint" style="margin-bottom:16px">An email listing the tickets that are still open.
+  Only the people you add below receive it.</p>
+{% if error %}<div class="err" style="margin:12px 0">{{ error }}</div>{% endif %}
+{% if notice %}<div class="panel" style="margin:12px 0"><div class="panel-b">{{ notice }}</div></div>{% endif %}
+
+<div class="grid">
+<div>
+<div class="panel"><div class="panel-h">Subscribers
+  {% if subscribers %}
+  <form method="post" action="/root/digest/send" class="right"
+        data-confirm="Send the digest to every subscriber now?">
+    <button class="btn btn-sm btn-p">Send now to everyone</button></form>
+  {% endif %}
+</div>
+<table><thead><tr>
+  <th>Account</th><th>Email</th><th style="width:230px">Sees</th><th style="width:190px"></th>
+</tr></thead><tbody>
+{% for s in subscribers %}{% set u = s.row %}
+<tr>
+  <td>{{ u.display_name or u.username }}
+    <span class="sub">{{ u.username }} · {{ u.role }}</span></td>
+  <td>{% if s.skip %}<span class="pill s-waiting_customer">{{ s.skip }}</span>
+      {% else %}<span class="mono">{{ u.email }}</span>{% endif %}</td>
+  <td><form method="post" action="/root/digest/subscribers/{{ u.user_id }}/scope" class="row">
+    <select name="scope" style="flex:1">{% for key, label in scope_labels.items() %}
+      <option value="{{ key }}" {{ 'selected' if key==u.scope }}>{{ label }}</option>
+    {% endfor %}</select>
+    <button class="btn btn-sm">Save</button></form></td>
+  <td><div class="row">
+    <a class="btn btn-sm" href="/root/digest/preview/{{ u.user_id }}" target="_blank">Preview</a>
+    <form method="post" action="/root/digest/send">
+      <input type="hidden" name="user_id" value="{{ u.user_id }}">
+      <button class="btn btn-sm">Send</button></form>
+    <form method="post" action="/root/digest/subscribers/{{ u.user_id }}/remove"
+          data-confirm="Stop sending the digest to {{ u.username }}?">
+      <button class="btn btn-sm btn-d">Remove</button></form>
+  </div></td>
+</tr>
+{% else %}<tr><td colspan="4" class="sub" style="padding:20px">Nobody yet. Add someone on the right.</td></tr>
+{% endfor %}
+</tbody></table></div>
+
+<div class="panel"><div class="panel-h">Recent sends</div>
+<table><tbody>
+{% for a in sends %}
+<tr><td class="mono sub nowrap" style="width:150px">{{ a.created_at | dt }}</td>
+  <td style="width:150px">{{ a.target }}</td>
+  <td class="sub">{{ a.detail }}</td></tr>
+{% else %}<tr><td class="sub" style="padding:20px">Nothing sent yet.</td></tr>{% endfor %}
+</tbody></table></div>
+</div>
+
+<div>
+<div class="panel"><div class="panel-h">Add a subscriber</div><div class="panel-b">
+  <form method="post" action="/root/digest/subscribers">
+    <div class="field"><label class="f" for="user_id">Account</label>
+      <select id="user_id" name="user_id" required>
+        <option value="">Choose an account…</option>
+        {% for u in candidates %}
+        <option value="{{ u.id }}">{{ u.username }} ({{ u.role }}){{ ' — ' ~ u.email if u.email else ' — no email yet' }}</option>
+        {% endfor %}</select></div>
+    <div class="field"><label class="f" for="email">Email</label>
+      <input id="email" name="email" type="email" autocapitalize="off"
+             placeholder="Only needed if the account has none"></div>
+    <div class="field"><label class="f" for="scope">Sees</label>
+      <select id="scope" name="scope">{% for key, label in scope_labels.items() %}
+        <option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
+    <button class="btn btn-p" style="width:100%">Add</button>
+  </form>
+  <p class="hint">Only enabled accounts can be added. Disabling or deleting an account
+    stops its emails.</p>
+</div></div>
+
+<div class="panel"><div class="panel-h">Schedule</div><div class="panel-b">
+  <form method="post" action="/root/digest/schedule">
+    <label class="f">Send on</label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-bottom:13px">
+      {% for name in day_names %}
+      <label style="font-size:13px;display:flex;gap:7px;align-items:center">
+        <input type="checkbox" name="days" value="{{ loop.index0 }}" style="width:auto"
+               {{ 'checked' if loop.index0 in schedule.days }}>{{ name }}</label>
+      {% endfor %}
+    </div>
+    <div class="field"><label class="f" for="hour">At</label>
+      <select id="hour" name="hour">{% for h in range(24) %}
+        <option value="{{ h }}" {{ 'selected' if h==schedule.hour }}>{{ '%d:00 %s' | format(h % 12 or 12, 'AM' if h < 12 else 'PM') }}</option>
+      {% endfor %}</select></div>
+    <label style="font-size:13px;display:flex;gap:7px;align-items:center;margin-bottom:11px">
+      <input type="checkbox" name="on_new_ticket" value="1" style="width:auto"
+             {{ 'checked' if schedule.on_new_ticket }}>
+      Also email when a ticket is created</label>
+    <button class="btn btn-sm">Save schedule</button>
+  </form>
+  <p class="hint">Now: {{ schedule_text }}{{ ', plus every new ticket' if schedule.on_new_ticket }}.
+    Times are {{ config.TIMEZONE }}. Tick no days to turn the schedule off. New-ticket
+    emails go only to subscribers who see every ticket, and never to the ticket's creator.</p>
+</div></div>
+
+<div class="panel"><div class="panel-h">Delivery</div><div class="panel-b">
+  <p style="margin:0">{{ mail_text }}</p>
+  {% if mail_mode == 'outbox' %}
+  <p class="hint">{{ outbox_count }} file{{ '' if outbox_count == 1 else 's' }} in
+    <span class="mono">{{ config.OUTBOX_DIR }}</span>. Open a <span class="mono">.eml</span>
+    file in Outlook to see exactly what would have been sent.</p>
+  {% endif %}
+  {% if not config.BASE_URL %}
+  <p class="hint">HELPDESK_BASE_URL is not set, so the emails have no links to tickets.</p>
+  {% endif %}
+</div></div>
+</div>
+</div>
+{% endblock %}

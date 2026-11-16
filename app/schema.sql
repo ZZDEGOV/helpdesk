@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
     id                   INTEGER PRIMARY KEY,
     username             TEXT UNIQUE NOT NULL,
     display_name         TEXT,
+    email                TEXT,
     password_hash        TEXT,
     password_salt        TEXT,
     role                 TEXT NOT NULL DEFAULT 'user',
@@ -33,6 +34,14 @@ CREATE TABLE IF NOT EXISTS sessions (
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL
+);
+
+-- Who receives the open-ticket digest. Root picks each one by hand.
+-- scope: 'all' = every open ticket, 'own' = only the tickets that user owns.
+CREATE TABLE IF NOT EXISTS digest_subscribers (
+    user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    scope      TEXT NOT NULL DEFAULT 'all',
+    created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (

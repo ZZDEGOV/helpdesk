@@ -100,6 +100,14 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
         "CREATE INDEX IF NOT EXISTS idx_tickets_owner ON tickets(owner_id)",
         "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at)",
     ]),
+    (4, [
+        # --- open-ticket digest ---------------------------------------------
+        "ALTER TABLE users ADD COLUMN email TEXT",
+        """CREATE TABLE IF NOT EXISTS digest_subscribers (
+            user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            scope      TEXT NOT NULL DEFAULT 'all',
+            created_at TEXT NOT NULL)""",
+    ]),
 ]
 
 # Migration 3 also rebuilds the tickets table to drop its CHECK constraints.

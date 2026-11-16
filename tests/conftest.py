@@ -59,7 +59,10 @@ def env() -> dict[str, TestClient]:
     with connect() as conn:
         for table in ("sessions", "audit_log", "events", "tickets", "customers", "users"):
             conn.execute(f"DELETE FROM {table}")
+        conn.execute("DELETE FROM meta WHERE key LIKE 'digest_%'")
         conn.commit()
+    for old in config.OUTBOX_DIR.glob("*.eml"):
+        old.unlink()
 
     root = TestClient(app)
     root.post("/setup", data={"username": "root", "password": "rootpass123",

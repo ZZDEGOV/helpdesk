@@ -1,8 +1,9 @@
 """Passwords, sessions, and permission checks.
 
-No email addresses anywhere, so password recovery is root-initiated only: root
-issues a temporary password and the account is flagged must_change_password. That
-way root never learns anyone's working password.
+Password recovery is root-initiated only: root issues a temporary password and
+the account is flagged must_change_password. That way root never learns anyone's
+working password. An account's optional email address is used for the open-ticket
+digest (digest.py) and nothing else -- it is not a login or a recovery channel.
 """
 import hashlib
 import hmac
@@ -10,7 +11,7 @@ import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
-from . import config
+from . import config, mailer
 from .db import utcnow
 
 # scrypt parameters. n=2**14 is ~50ms per hash on a normal desktop — slow enough
@@ -91,9 +92,19 @@ def has_root(conn) -> bool:
     ).fetchone())
 
 
+def _clean_email(email: str | None) -> str | None:
+    """Lower-cased address, or None for blank. Raises ValueError if malformed."""
+    email = (email or "").strip().lower()
+    if not email:
+        return None
+    if not mailer.valid_address(email):
+        raise ValueError(f"'{email}' is not a valid email address")
+    return email
+
+
 def create_user(conn, *, username: str, display_name: str, password: str | None,
                 role: str = "user", created_by: int | None = None,
-                must_change: bool = True) -> int:
+                must_change: bool = True, email: str | None = None) -> int:
     username = username.strip()
     if not username:
         raise ValueError("username is required")
@@ -101,13 +112,14 @@ def create_user(conn, *, username: str, display_name: str, password: str | None,
         raise ValueError(f"unknown role: {role}")
     if get_user_by_name(conn, username):
         raise ValueError(f"username '{username}' is taken")
+    email = _clean_email(email)
 
     pw_hash, salt = hash_password(password) if password else (None, None)
     cur = conn.execute(
-        "INSERT INTO users (username, display_name, password_hash, password_salt,"
+        "INSERT INTO users (username, display_name, email, password_hash, password_salt,"
         " role, is_active, must_change_password, created_by, created_at)"
-        " VALUES (?,?,?,?,?,1,?,?,?)",
-        (username, display_name.strip() or username, pw_hash, salt, role,
+        " VALUES (?,?,?,?,?,?,1,?,?,?)",
+        (username, display_name.strip() or username, email, pw_hash, salt, role,
          1 if (must_change and password) else 0, created_by, utcnow()))
     return cur.lastrowid
 
@@ -121,8 +133,12 @@ def set_password(conn, user_id: int, password: str, must_change: bool = False) -
 
 
 def update_user(conn, user_id: int, *, display_name: str | None = None,
-                role: str | None = None, is_active: bool | None = None) -> None:
+                role: str | None = None, is_active: bool | None = None,
+                email: str | None = None) -> None:
+    """None leaves a field alone. An empty `email` clears the address."""
     changes: dict = {}
+    if email is not None:
+        changes["email"] = _clean_email(email)
     if display_name is not None:
         changes["display_name"] = display_name.strip()
     if role is not None:

@@ -10,3 +10,7 @@ tests/
 .pytest_cache
 *.db
 *.db-*
+
+# personal ops notes (local only)
+OPS-GUIDE.md
+start-helpdesk.ps1

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Help Desk</title></head>
+{#- Email clients ignore stylesheets, so every style here is inline and the
+    layout is a plain table. -#}
+<body style="margin:0;padding:20px;background:#F4F5F7;font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1B2430">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:760px;margin:0 auto;background:#FFFFFF;border:1px solid #D9DEE5">
+<tr><td style="padding:18px 22px;border-bottom:3px solid #15599E">
+  <div style="font-size:12px;letter-spacing:.08em;color:#5B6675">TRANSIT SYSTEMS HELP DESK{% if config.ENV != 'production' %} &middot; {{ config.ENV | upper }} (TEST DATA){% endif %}</div>
+  <div style="font-size:20px;font-weight:600;margin-top:4px">{{ count }}{% if overdue %}, <span style="color:#B3261E">{{ overdue }} overdue</span>{% endif %}</div>
+</td></tr>
+
+{% if new_ticket %}
+<tr><td style="padding:14px 22px;background:#EAF2FB;border-bottom:1px solid #D9DEE5">
+  <div style="font-size:12px;color:#5B6675">NEW TICKET</div>
+  <div style="font-size:15px;font-weight:600;margin-top:2px">
+    {% if link(new_ticket) %}<a href="{{ link(new_ticket) }}" style="color:#15599E;text-decoration:none">{{ new_ticket.ref }}</a>{% else %}{{ new_ticket.ref }}{% endif %}
+    &nbsp;{{ new_ticket.subject }}</div>
+  <div style="font-size:12px;color:#5B6675;margin-top:2px">{{ config.PRIORITY_LABELS[new_ticket.priority] }}{% if new_ticket.category %} &middot; {{ new_ticket.category }}{% endif %}</div>
+</td></tr>
+{% endif %}
+
+<tr><td style="padding:14px 22px">
+{% if tickets %}
+<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px">
+<tr style="text-align:left;color:#5B6675;font-size:11px">
+  <th style="padding:6px 8px 6px 0;border-bottom:1px solid #D9DEE5">TICKET</th>
+  <th style="padding:6px 8px;border-bottom:1px solid #D9DEE5">PRI</th>
+  <th style="padding:6px 8px;border-bottom:1px solid #D9DEE5">SUBJECT</th>
+  <th style="padding:6px 8px;border-bottom:1px solid #D9DEE5">STATUS</th>
+  {% if show_owner %}<th style="padding:6px 8px;border-bottom:1px solid #D9DEE5">OWNER</th>{% endif %}
+  <th style="padding:6px 8px;border-bottom:1px solid #D9DEE5">RECEIVED</th>
+  <th style="padding:6px 0 6px 8px;border-bottom:1px solid #D9DEE5">DUE</th>
+</tr>
+{% for t in tickets %}
+{% set late = is_overdue(t) %}
+<tr>
+  <td style="padding:7px 8px 7px 0;border-bottom:1px solid #EEF0F3;white-space:nowrap;font-family:Consolas,monospace">
+    {% if link(t) %}<a href="{{ link(t) }}" style="color:#15599E;text-decoration:none">{{ t.ref }}</a>{% else %}{{ t.ref }}{% endif %}</td>
+  <td style="padding:7px 8px;border-bottom:1px solid #EEF0F3;white-space:nowrap{% if t.priority <= 2 %};font-weight:600{% endif %}">P{{ t.priority }}</td>
+  <td style="padding:7px 8px;border-bottom:1px solid #EEF0F3">{{ t.subject }}</td>
+  <td style="padding:7px 8px;border-bottom:1px solid #EEF0F3;white-space:nowrap">{{ config.STATUS_LABELS[t.status] }}</td>
+  {% if show_owner %}<td style="padding:7px 8px;border-bottom:1px solid #EEF0F3;white-space:nowrap">{{ t.owner_username or '—' }}</td>{% endif %}
+  <td style="padding:7px 8px;border-bottom:1px solid #EEF0F3;white-space:nowrap">{{ t.received_at | date }}</td>
+  <td style="padding:7px 0 7px 8px;border-bottom:1px solid #EEF0F3;white-space:nowrap{% if late %};color:#B3261E;font-weight:600{% endif %}">{{ t.due_at | date }}{% if late %} (overdue){% endif %}</td>
+</tr>
+{% endfor %}
+</table>
+{% else %}
+<p style="margin:6px 0;color:#5B6675">No open tickets. Nothing needs attention.</p>
+{% endif %}
+</td></tr>
+
+<tr><td style="padding:12px 22px;border-top:1px solid #D9DEE5;font-size:12px;color:#5B6675">
+  Sent to {{ name }} by the Help Desk. This list shows {{ scope_label }}, sorted by priority.
+  {% if config.BASE_URL %}<a href="{{ config.BASE_URL }}" style="color:#15599E">Open the Help Desk</a>.{% endif %}
+  To stop receiving it, ask the Help Desk administrator.
+</td></tr>
+</table>
+</body>
+</html>

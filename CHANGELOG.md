@@ -1,5 +1,24 @@
 # Changelog
 
+## v3.1 — Open-ticket digest
+
+Schema version 4 (applied automatically on start): accounts gain an optional email
+address, and there is a new `digest_subscribers` table.
+
+### Email digest
+Root can email a list of the open tickets to chosen accounts (**Root → Email
+digest**). Root adds each subscriber by hand and picks what they see: every open
+ticket, or only their own. It goes out on the weekdays and hour root sets, on
+**Send now**, and optionally when a ticket is created. **Preview** shows a
+subscriber's email without sending it.
+
+Delivery is set by `HELPDESK_MAIL_MODE`: `outbox` (the default: writes `.eml` files,
+sends nothing), `webhook` (a Power Automate flow) or `smtp`.
+
+### Staging safety
+`HELPDESK_ENV=staging` puts a banner on every page and forces mail into the outbox,
+so a staging copy of production data cannot email anyone.
+
 ## v3.0 — Team server
 
 Runs in Docker on the lab server instead of one person's PC. No schema change;

@@ -97,6 +97,15 @@ Set these under `environment:` in `compose.yaml`. All are optional.
 | `HELPDESK_BACKUP_KEEP` | `14` | Daily snapshots to keep |
 | `HELPDESK_SECURE_COOKIES` | `false` | Set `true` once served over HTTPS |
 | `HELPDESK_OWNER_HINTS` | | Extra names that mark a pasted email as ours |
+| `HELPDESK_ENV` | `production` | Anything else (e.g. `staging`) shows a banner and never sends real email |
+| `HELPDESK_BASE_URL` | | Address the team uses, e.g. `http://172.24.47.172:8000`. Makes ticket refs in emails clickable |
+| `HELPDESK_MAIL_MODE` | `outbox` | `outbox`, `webhook` or `smtp`: see [Open-ticket digest](#open-ticket-digest) |
+| `HELPDESK_MAIL_WEBHOOK_URL` | | The Power Automate flow's URL (`webhook` mode). **Treat it like a password** |
+| `HELPDESK_MAIL_PROXY` | | HTTP proxy for reaching the flow, if the network requires one |
+| `HELPDESK_MAIL_FROM` | `helpdesk@localhost` | From address (`smtp` mode and outbox files) |
+| `HELPDESK_SMTP_HOST` / `_PORT` | / `25` | Mail server (`smtp` mode) |
+| `HELPDESK_SMTP_USERNAME` / `_PASSWORD` | | Only if the mail server requires a login |
+| `HELPDESK_SMTP_STARTTLS` | `false` | Set `true` if the mail server requires encryption |
 
 The app is served over plain HTTP, so passwords cross the LAN unencrypted. If that
 matters for your network, put a reverse proxy with a certificate in front (e.g.
@@ -116,7 +125,32 @@ Caddy) and set `HELPDESK_SECURE_COOKIES=true`.
 
 A ticket belongs to whoever created it. The customer directory is shared by
 everyone. Root creates accounts with a temporary password, and the user picks their
-own at first sign-in. There's no email, so password resets also go through root.
+own at first sign-in. Password resets also go through root; an account's optional
+email address is only used for the digest below.
+
+### Open-ticket digest
+
+An email listing the tickets that are still open, set up by root under
+**Email digest**.
+
+- **Who gets it:** only the accounts root adds. Nobody is subscribed because of
+  their role. Disabling or deleting an account stops its emails.
+- **What each person sees:** root picks per subscriber: *every open ticket*, or
+  *only tickets they own*.
+- **When:** on the weekdays and hour root ticks, whenever root presses **Send now**,
+  and optionally each time a ticket is created (those go only to subscribers who see
+  every ticket, and not to the ticket's creator).
+- **Preview** shows the exact email for a subscriber without sending anything.
+
+How the email is delivered is `HELPDESK_MAIL_MODE`:
+
+| Mode | What happens |
+|---|---|
+| `outbox` (default) | Each email is written as a `.eml` file in `<data>/outbox`. Nothing is sent. |
+| `webhook` | Each email is POSTed as JSON (`to`, `subject`, `html`, `text`) to `HELPDESK_MAIL_WEBHOOK_URL`. A Power Automate flow with a *When an HTTP request is received* trigger and a *Send an email* action does the sending. |
+| `smtp` | Each email is handed to the mail server at `HELPDESK_SMTP_HOST`. |
+
+Every send, and every change to the list or schedule, is recorded in the audit log.
 
 ### Statuses and the clock
 

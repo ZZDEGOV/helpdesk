@@ -61,7 +61,9 @@ def restore(source: Path, force: bool = False) -> int:
         if existing and not force:
             raise SystemExit(f"The current database has {existing} ticket(s). "
                              "Re-run with --force to overwrite it.")
-        with closing(sqlite3.connect(f"file:{source}?mode=ro", uri=True)) as src:
+        # immutable: read the snapshot as-is, without creating -wal/-shm files
+        # next to it (it's a finished snapshot, so there's nothing to recover).
+        with closing(sqlite3.connect(f"file:{source}?mode=ro&immutable=1", uri=True)) as src:
             src.backup(conn)
         return conn.execute("SELECT COUNT(*) FROM tickets").fetchone()[0]
 

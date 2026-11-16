@@ -6,6 +6,7 @@ how Docker and the test suite override them. Everything below the settings block
 is domain configuration that lives in code.
 """
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -45,6 +46,28 @@ class Settings(BaseSettings):
     # the signed-in user's own username and display name. Comma separated.
     owner_hints: str = ""
 
+    # Anything other than "production" shows a banner on every page and forces
+    # mail into the outbox, so a staging copy of real data can never email anyone.
+    env: str = "production"
+
+    # Where the team reaches the app, e.g. http://172.24.47.172:8000. Used to
+    # build ticket links in emails; without it the emails have no links.
+    base_url: str = ""
+
+    # --- outgoing mail (the open-ticket digest) -----------------------------
+    #   outbox  -- write each email as a .eml file under <data_dir>/outbox. Sends nothing.
+    #   webhook -- POST each email as JSON to a URL (a Power Automate flow).
+    #   smtp    -- hand each email to a mail server.
+    mail_mode: Literal["outbox", "webhook", "smtp"] = "outbox"
+    mail_webhook_url: str = Field("", description="Secret: anyone with it can send mail")
+    mail_proxy: str = Field("", description="HTTP proxy for the webhook, if one is needed")
+    mail_from: str = "helpdesk@localhost"
+    smtp_host: str = ""
+    smtp_port: int = 25
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_starttls: bool = False
+
 
 settings = Settings()
 
@@ -64,6 +87,10 @@ BACKUP_KEEP = settings.backup_keep
 SECURE_COOKIES = settings.secure_cookies
 OWNER_USERNAME = settings.owner_username
 OWNER_HINTS = [h.strip().lower() for h in settings.owner_hints.split(",") if h.strip()]
+ENV = settings.env.strip().lower() or "production"
+BASE_URL = settings.base_url.strip().rstrip("/")
+OUTBOX_DIR = DATA_DIR / "outbox"
+# The mail_* and smtp_* settings are read from `settings` at send time (mailer.py).
 
 # ---------------------------------------------------------------- statuses
 #

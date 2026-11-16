@@ -21,6 +21,8 @@
           <option value="{{ r }}" {{ 'selected' if r==u.role }}>{{ config.ROLE_LABELS[r] }}</option>
         {% endfor %}</select></div>
     </div>
+    <div class="field"><label class="f">Email <span class="sub">(optional, for the ticket digest)</span></label>
+      <input name="email" type="email" value="{{ u.email or '' }}" autocapitalize="off"></div>
     <label style="font-size:13px;display:flex;gap:7px;align-items:center;margin-bottom:11px">
       <input type="checkbox" name="is_active" value="1" {{ 'checked' if u.is_active }} style="width:auto">
       Account enabled</label>
@@ -55,6 +57,8 @@
       <input id="username" name="username" required autocapitalize="off"></div>
     <div class="field"><label class="f" for="display_name">Display name</label>
       <input id="display_name" name="display_name"></div>
+    <div class="field"><label class="f" for="email">Email <span class="sub">(optional)</span></label>
+      <input id="email" name="email" type="email" autocapitalize="off"></div>
     <div class="field"><label class="f" for="role">Role</label>
       <select id="role" name="role">{% for r in config.ROLES %}
         <option value="{{ r }}" {{ 'selected' if r=='user' }}>{{ config.ROLE_LABELS[r] }}</option>
