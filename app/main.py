@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Transit Systems Help Desk",
-    version="3.1.0",
+    version="3.2.0",
     summary="Ticket tracking with a pausable SLA clock.",
     description="Most routes serve HTML pages and form posts; `/api/v1` returns JSON. "
                 "Everything except `/health` requires signing in.",

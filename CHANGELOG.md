@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.2 — Drop-folder delivery
+
+New `HELPDESK_MAIL_MODE=folder`: each digest email is written as a `.json` file
+(`to`, `subject`, `html`) into `HELPDESK_MAIL_FOLDER`. With a OneDrive-synced folder
+mounted there, a Power Automate *When a file is created* flow sends the email and
+deletes the file. For networks where an HTTP-triggered flow isn't permitted. The
+Email digest page shows how many emails are still waiting to be picked up. No schema
+change.
+
 ## v3.1 — Open-ticket digest
 
 Schema version 4 (applied automatically on start): accounts gain an optional email

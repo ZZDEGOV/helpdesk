@@ -5,6 +5,9 @@
     webhook  POST the email as JSON to a URL. A Power Automate flow receives it
              and sends it from a real mailbox.
     smtp     hand the email to a mail server (an "SMTP relay").
+    folder   write the email as a .json file into a OneDrive-synced folder. A
+             Power Automate "when a file is created" flow sends it and deletes
+             the file. Needs the server PC's OneDrive to be syncing.
 
 The rest of the app only calls send(); it never knows which one is in use.
 """
@@ -62,6 +65,15 @@ def describe() -> str:
         return ("Webhook: emails are handed to the Power Automate flow."
                 if config.settings.mail_webhook_url
                 else "Webhook, but HELPDESK_MAIL_WEBHOOK_URL is not set. Sending will fail.")
+    if current == "folder":
+        waiting = pending()
+        if waiting is None:
+            return ("Drop folder, but HELPDESK_MAIL_FOLDER is not set or the folder is "
+                    "missing. Sending will fail.")
+        return ("Drop folder: emails are written as files for the Power Automate flow to "
+                f"send. {waiting} waiting to be picked up"
+                + (" (if this number doesn't go down, OneDrive isn't syncing: sign in "
+                   "to the server PC)." if waiting else "."))
     return (f"SMTP: emails are handed to {config.settings.smtp_host}."
             if config.settings.smtp_host
             else "SMTP, but HELPDESK_SMTP_HOST is not set. Sending will fail.")
@@ -71,7 +83,8 @@ def send(message: Message) -> None:
     """Deliver one email, or raise MailError."""
     if not valid_address(message.to):
         raise MailError(f"not a valid address: {message.to!r}")
-    {"outbox": _outbox, "webhook": _webhook, "smtp": _smtp}[mode()](message)
+    {"outbox": _outbox, "webhook": _webhook, "smtp": _smtp,
+     "folder": _folder}[mode()](message)
 
 
 def _mime(message: Message) -> EmailMessage:
@@ -86,12 +99,43 @@ def _mime(message: Message) -> EmailMessage:
     return mime
 
 
+def _file_stem(message: Message) -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    who = re.sub(r"[^a-z0-9]+", "_", message.to.lower()).strip("_")[:40]
+    return f"{stamp}-{who}-{secrets.token_hex(3)}"
+
+
+def _folder(message: Message) -> None:
+    """One .json file per email. The flow that sends it also deletes it, so a
+    file still sitting here is an email that hasn't gone out yet."""
+    folder = config.settings.mail_folder
+    if folder is None:
+        raise MailError("HELPDESK_MAIL_FOLDER is not set")
+    if not folder.is_dir():
+        raise MailError("the drop folder does not exist (is it mounted into the container?)")
+    body = json.dumps({"to": message.to, "subject": message.subject,
+                       "html": message.html}, ensure_ascii=True)
+    try:
+        # One write under the final name. Don't "write a temp name, then rename":
+        # OneDrive can upload the temp file first, and a rename in the cloud is
+        # not a "file created" event, so the flow would never fire.
+        (folder / f"{_file_stem(message)}.json").write_text(body, encoding="utf-8")
+    except OSError as exc:
+        raise MailError(f"could not write to the drop folder: {exc.strerror or exc}") from None
+
+
+def pending() -> int | None:
+    """Emails written in folder mode that the flow hasn't sent yet."""
+    folder = config.settings.mail_folder
+    if mode() != "folder" or folder is None or not folder.is_dir():
+        return None
+    return len(list(folder.glob("*.json")))
+
+
 def _outbox(message: Message) -> None:
     folder = config.OUTBOX_DIR
     folder.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    who = re.sub(r"[^a-z0-9]+", "_", message.to.lower()).strip("_")[:40]
-    path = folder / f"{stamp}-{who}-{secrets.token_hex(3)}.eml"
+    path = folder / f"{_file_stem(message)}.eml"
     path.write_bytes(_mime(message).as_bytes())
     for old in sorted(folder.glob("*.eml"), reverse=True)[OUTBOX_KEEP:]:
         old.unlink(missing_ok=True)

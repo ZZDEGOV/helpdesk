@@ -119,5 +119,6 @@ def digest_send(form: Annotated[DigestSend, Form()], conn: DB, me: RootUser):
         return _back(error="There is nobody to send to. Add a subscriber first.")
     if result.failed or (result.skipped and not result.sent):
         return _back(error=result.summary())
-    return _back(notice=("Written to the outbox: " if mailer.mode() == "outbox" else "")
-                        + result.summary() + ".")
+    prefix = {"outbox": "Written to the outbox (not sent): ",
+              "folder": "Handed to the drop folder: "}.get(mailer.mode(), "")
+    return _back(notice=prefix + result.summary() + ".")

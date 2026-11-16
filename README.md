@@ -99,8 +99,9 @@ Set these under `environment:` in `compose.yaml`. All are optional.
 | `HELPDESK_OWNER_HINTS` | | Extra names that mark a pasted email as ours |
 | `HELPDESK_ENV` | `production` | Anything else (e.g. `staging`) shows a banner and never sends real email |
 | `HELPDESK_BASE_URL` | | Address the team uses, e.g. `http://172.24.47.172:8000`. Makes ticket refs in emails clickable |
-| `HELPDESK_MAIL_MODE` | `outbox` | `outbox`, `webhook` or `smtp`: see [Open-ticket digest](#open-ticket-digest) |
+| `HELPDESK_MAIL_MODE` | `outbox` | `outbox`, `folder`, `webhook` or `smtp`: see [Open-ticket digest](#open-ticket-digest) |
 | `HELPDESK_MAIL_WEBHOOK_URL` | | The Power Automate flow's URL (`webhook` mode). **Treat it like a password** |
+| `HELPDESK_MAIL_FOLDER` | | Drop folder inside the container (`folder` mode) |
 | `HELPDESK_MAIL_PROXY` | | HTTP proxy for reaching the flow, if the network requires one |
 | `HELPDESK_MAIL_FROM` | `helpdesk@localhost` | From address (`smtp` mode and outbox files) |
 | `HELPDESK_SMTP_HOST` / `_PORT` | / `25` | Mail server (`smtp` mode) |
@@ -148,6 +149,7 @@ How the email is delivered is `HELPDESK_MAIL_MODE`:
 |---|---|
 | `outbox` (default) | Each email is written as a `.eml` file in `<data>/outbox`. Nothing is sent. |
 | `webhook` | Each email is POSTed as JSON (`to`, `subject`, `html`, `text`) to `HELPDESK_MAIL_WEBHOOK_URL`. A Power Automate flow with a *When an HTTP request is received* trigger and a *Send an email* action does the sending. |
+| `folder` | Each email is written as a `.json` file (`to`, `subject`, `html`) into `HELPDESK_MAIL_FOLDER`. Mount a OneDrive-synced folder there; a Power Automate *When a file is created* flow sends the email and deletes the file. Only works while OneDrive on the host is signed in and syncing. |
 | `smtp` | Each email is handed to the mail server at `HELPDESK_SMTP_HOST`. |
 
 Every send, and every change to the list or schedule, is recorded in the audit log.

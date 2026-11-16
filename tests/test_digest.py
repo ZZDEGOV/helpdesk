@@ -306,3 +306,25 @@ def test_non_production_never_sends_for_real(env, monkeypatch):
     env["root"].post("/root/digest/send", data={}, **NR)
     assert outbox()[0]["Subject"].startswith("[STAGING] ")
     assert "STAGING" in env["root"].get("/root/digest").text
+
+
+def test_folder_mode_writes_one_json_file_per_email(env, monkeypatch, tmp_path):
+    monkeypatch.setattr(config.settings, "mail_mode", "folder")
+    monkeypatch.setattr(config.settings, "mail_folder", tmp_path)
+    mailer.send(_message())
+    files = list(tmp_path.iterdir())
+    assert [f.suffix for f in files] == [".json"]
+    assert json.loads(files[0].read_text(encoding="utf-8")) == {
+        "to": "cto@example.gov", "subject": "Hi", "html": "<p>Hi</p>"}
+    assert mailer.pending() == 1
+    assert "1 waiting" in env["root"].get("/root/digest").text
+
+
+def test_folder_mode_fails_cleanly_when_the_folder_is_missing(env, monkeypatch, tmp_path):
+    monkeypatch.setattr(config.settings, "mail_mode", "folder")
+    with pytest.raises(mailer.MailError):
+        mailer.send(_message())                             # not configured
+    monkeypatch.setattr(config.settings, "mail_folder", tmp_path / "not-mounted")
+    with pytest.raises(mailer.MailError):
+        mailer.send(_message())
+    assert not (tmp_path / "not-mounted").exists()          # never created silently

@@ -58,7 +58,11 @@ class Settings(BaseSettings):
     #   outbox  -- write each email as a .eml file under <data_dir>/outbox. Sends nothing.
     #   webhook -- POST each email as JSON to a URL (a Power Automate flow).
     #   smtp    -- hand each email to a mail server.
-    mail_mode: Literal["outbox", "webhook", "smtp"] = "outbox"
+    #   folder  -- write each email as a .json file into mail_folder. A OneDrive-
+    #              synced folder there lets a Power Automate "file created" flow
+    #              pick it up, send it, and delete the file.
+    mail_mode: Literal["outbox", "webhook", "smtp", "folder"] = "outbox"
+    mail_folder: Path | None = Field(None, description="Drop folder for folder mode")
     mail_webhook_url: str = Field("", description="Secret: anyone with it can send mail")
     mail_proxy: str = Field("", description="HTTP proxy for the webhook, if one is needed")
     mail_from: str = "helpdesk@localhost"
