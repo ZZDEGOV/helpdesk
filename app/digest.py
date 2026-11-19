@@ -5,7 +5,7 @@ There are two kinds of recipient, both set up by root and nobody else:
   Subscribers -- individual accounts root adds by hand (digest_subscribers).
       Nobody is added because of their role. Each has a scope root chooses:
           all   every open ticket
-          team  their own tickets plus their groups' tickets
+          team  the tickets they own or are assigned, plus their groups'
           own   only the tickets they own
   Groups -- root can switch on a digest for a whole group (user_groups). Every
       member with an email address gets the group's open tickets, and people
@@ -36,7 +36,7 @@ log = logging.getLogger("helpdesk.digest")
 
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 SCOPE_LABELS = {"all": "Every open ticket",
-                "team": "Their own and their groups' tickets",
+                "team": "Their own, assigned and groups' tickets",
                 "own": "Only tickets they own"}
 
 
@@ -188,7 +188,7 @@ def build_for_subscriber(conn, sub, new_ticket=None) -> mailer.Message:
         tickets=repo.list_tickets(conn, status="open", sort="priority", **scope),
         show_owner=sub["scope"] != "own", new_ticket=new_ticket,
         scope_text={"all": "every open ticket",
-                    "team": "your open tickets and your groups'",
+                    "team": "your open tickets, the ones assigned to you, and your groups'",
                     "own": "the open tickets you own"}[sub["scope"]])
 
 

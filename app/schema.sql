@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS group_members (
 );
 
 -- Who receives the open-ticket digest. Root picks each one by hand.
--- scope: 'all' = every open ticket, 'team' = their own plus their groups',
+-- scope: 'all' = every open ticket, 'team' = their own, assigned and groups',
 --        'own' = only the tickets that user owns.
 -- days/hour/on_new_ticket/mark: that person's schedule (see digest.py).
 CREATE TABLE IF NOT EXISTS digest_subscribers (
@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS tickets (
     id              INTEGER PRIMARY KEY,
     ref             TEXT UNIQUE NOT NULL,
     customer_id     INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    -- owner: who logged it. assignee: who is working it (NULL = nobody yet).
     owner_id        INTEGER REFERENCES users(id) ON DELETE SET NULL,
     assignee_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
     -- NULL = private to the owner (plus admins); otherwise the group's members see it too
@@ -156,6 +157,27 @@ CREATE TABLE IF NOT EXISTS tickets (
     entry_id        TEXT,
     conversation_id TEXT,
     raw             TEXT
+);
+
+-- A person's named ticket-list filters. query is a normalized query string
+-- (see views.py).
+CREATE TABLE IF NOT EXISTS saved_views (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL COLLATE NOCASE,
+    query      TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (user_id, name)
+);
+
+-- Who has a ticket open right now, refreshed every ~20s by the ticket page.
+-- Rows older than a few minutes are meaningless and get cleared (presence.py).
+CREATE TABLE IF NOT EXISTS ticket_presence (
+    ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    seen_at   TEXT NOT NULL,
+    typing_at TEXT,
+    PRIMARY KEY (ticket_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -228,3 +250,4 @@ CREATE INDEX IF NOT EXISTS idx_tickets_owner      ON tickets(owner_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created      ON audit_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_tickets_group      ON tickets(group_id);
 CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_assignee   ON tickets(assignee_id);

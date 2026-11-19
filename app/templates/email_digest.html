@@ -28,7 +28,8 @@
   <th style="padding:6px 8px;border-bottom:1px solid #D9DEE5">PRI</th>
   <th style="padding:6px 8px;border-bottom:1px solid #D9DEE5">SUBJECT</th>
   <th style="padding:6px 8px;border-bottom:1px solid #D9DEE5">STATUS</th>
-  {% if show_owner %}<th style="padding:6px 8px;border-bottom:1px solid #D9DEE5">OWNER</th>{% endif %}
+  <th style="padding:6px 8px;border-bottom:1px solid #D9DEE5">ASSIGNED</th>
+  {% if show_owner %}<th style="padding:6px 8px;border-bottom:1px solid #D9DEE5">LOGGED BY</th>{% endif %}
   <th style="padding:6px 8px;border-bottom:1px solid #D9DEE5">RECEIVED</th>
   <th style="padding:6px 0 6px 8px;border-bottom:1px solid #D9DEE5">DUE</th>
 </tr>
@@ -40,6 +41,7 @@
   <td style="padding:7px 8px;border-bottom:1px solid #EEF0F3;white-space:nowrap{% if t.priority <= 2 %};font-weight:600{% endif %}">P{{ t.priority }}</td>
   <td style="padding:7px 8px;border-bottom:1px solid #EEF0F3">{{ t.subject }}</td>
   <td style="padding:7px 8px;border-bottom:1px solid #EEF0F3;white-space:nowrap">{{ config.STATUS_LABELS[t.status] }}</td>
+  <td style="padding:7px 8px;border-bottom:1px solid #EEF0F3;white-space:nowrap{% if not t.assignee_id %};color:#5B6675{% endif %}">{{ t.assignee_name or 'Unassigned' }}</td>
   {% if show_owner %}<td style="padding:7px 8px;border-bottom:1px solid #EEF0F3;white-space:nowrap">{{ t.owner_username or '—' }}</td>{% endif %}
   <td style="padding:7px 8px;border-bottom:1px solid #EEF0F3;white-space:nowrap">{{ t.received_at | date }}</td>
   <td style="padding:7px 0 7px 8px;border-bottom:1px solid #EEF0F3;white-space:nowrap{% if late %};color:#B3261E;font-weight:600{% endif %}">{{ t.due_at | date }}{% if late %} (overdue){% endif %}</td>

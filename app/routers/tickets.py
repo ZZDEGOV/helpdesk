@@ -1,15 +1,21 @@
 """The ticket list, ticket pages, and everything done on a ticket: status,
-details, timeline, questions, follow-ups, tags, and queued deletion."""
+details, assignment, timeline, questions, follow-ups, tags, and queued deletion.
+Also the list's saved views and bulk actions, and the ticket page's presence
+check-ins."""
 from typing import Annotated, Literal
+from urllib.parse import parse_qsl, urlencode
 
-from fastapi import APIRouter, BackgroundTasks, Form, Request
+from fastapi import APIRouter, BackgroundTasks, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import auth, config, digest, groups, repo, threadparse
+from .. import (assignment, auth, config, digest, groups, presence, repo, threadparse,
+                views)
+from ..db import utcnow
 from ..deps import (DB, CurrentUser, Forbidden, Restorer, SoftDeleter, ViewableTicket,
                     Worker, WorkableTicket, ticket_for_worker, viewer_id)
-from ..schemas import (FollowUp, GroupChange, MessageCreate, StatusChange, TicketCreate,
-                       TicketUpdate)
+from ..schemas import (AssigneeChange, BulkAction, FollowUp, GroupChange, MessageCreate,
+                       PresenceCheckIn, PresenceOut, StatusChange, TicketCreate,
+                       TicketUpdate, ViewSave)
 from ..web import render, see_other, to_utc
 
 router = APIRouter(tags=["tickets"])
@@ -17,45 +23,185 @@ router = APIRouter(tags=["tickets"])
 Redirect = {"response_class": RedirectResponse, "status_code": 303}
 
 SortKey = Literal["priority", "due", "newest", "oldest", "updated"]
+SORT_KEYS = SortKey.__args__
 
 
 def _back(ticket_id: int) -> RedirectResponse:
     return see_other(f"/tickets/{ticket_id}")
 
 
+def _list_url(query: str, **message: str) -> str:
+    """The ticket list with these filters, plus an optional notice or error."""
+    query = views.normalize(query)
+    extra = urlencode({k: v for k, v in message.items() if v})
+    return "/?" + "&".join(part for part in (query, extra) if part)
+
+
 # ---------------------------------------------------------------- list
+
+def _list_filters(user, params: dict[str, str]) -> tuple[dict, str]:
+    """Ticket-list query parameters -> repo.list_tickets keywords, and the sort.
+
+    Blank dropdowns submit "" -- they're coerced here rather than rejected. A
+    missing `status` means Open (any); a blank one means every status."""
+    def get(key: str) -> str:
+        return (params.get(key) or "").strip()
+
+    status = params.get("status", "open")
+    priority, show, assignee, idle = get("priority"), get("show"), get("assignee"), get("idle")
+    filters = {
+        "status": (status or "").strip() or None,
+        "priority": int(priority) if priority.isdigit() else None,
+        "category": get("category") or None,
+        "channel": get("channel") or None,
+        "q": get("q") or None,
+        "overdue_only": get("overdue") in ("1", "true", "on", "yes"),
+        "viewer_id": viewer_id(user),
+        "owner_id": user["id"] if show == "mine" else None,
+        "group_id": int(show) if show.isdigit() else None,
+        "assignee_id": user["id"] if assignee == "me" else
+                       int(assignee) if assignee.isdigit() else None,
+        "unassigned": assignee == "none",
+        "idle_days": int(idle) if idle.isdigit() and 1 <= int(idle) <= 365 else None,
+    }
+    sort = get("sort") if get("sort") in SORT_KEYS else "priority"
+    return filters, sort
+
+
+def _view_chips(conn, user, current: str) -> list[dict]:
+    """Built-in views (with a count of what's in them) then the person's own."""
+    chips = []
+    for view in views.built_in(user):
+        filters, _ = _list_filters(user, dict(parse_qsl(view["query"], keep_blank_values=True)))
+        chips.append({**view, "count": repo.count_tickets(conn, **filters), "id": None,
+                      "on": view["query"] == current})
+    for row in views.saved(conn, user["id"]):
+        chips.append({"name": row["name"], "query": row["query"], "count": None,
+                      "id": row["id"], "on": row["query"] == current})
+    return chips
+
 
 @router.get("/", response_class=HTMLResponse, summary="Ticket list and dashboard")
 def index(request: Request, conn: DB, user: CurrentUser,
           status: str = "open", priority: str = "", category: str = "",
           channel: str = "", q: str = "", sort: SortKey = "priority", overdue: str = "",
-          show: str = ""):
-    """Users see the tickets they own plus those filed under a group they belong
-    to; admins and root see every ticket.
+          show: str = "", assignee: str = "", idle: str = "",
+          notice: str = "", error: str = ""):
+    """Users see the tickets they own or are assigned, plus those filed under a
+    group they belong to; admins and root see every ticket.
 
     `status` takes a status key, `open` (any unfinished status), `actionable`
-    (the clock is running), or blank for all. `show` narrows the list to `mine`
-    or to one group's id."""
-    # Blank dropdowns submit "" -- coerce here rather than rejecting the request.
-    pri = int(priority) if priority.strip().isdigit() else None
-    overdue_only = overdue.strip() in ("1", "true", "on", "yes")
+    (the clock is running), or blank for all. `show` narrows the list to tickets
+    you own (`mine`) or to one group's id. `assignee` is `me`, `none`
+    (unassigned) or a user id. `idle` is a number of days without any change."""
+    params = {"status": status, "priority": priority, "category": category,
+              "channel": channel, "q": q, "sort": sort, "overdue": overdue, "show": show,
+              "assignee": assignee, "idle": idle}
+    filters, sort = _list_filters(user, params)
+    tickets = repo.list_tickets(conn, sort=sort, **filters)
     viewer = viewer_id(user)
-    show = show.strip()
-    tickets = repo.list_tickets(
-        conn, status=status or None, priority=pri, category=category or None,
-        channel=channel or None, q=q or None, overdue_only=overdue_only, sort=sort,
-        viewer_id=viewer, owner_id=user["id"] if show == "mine" else None,
-        group_id=int(show) if show.isdigit() else None)
+    current = views.normalize(request.query_params.multi_items())
+    works = auth.can(user, "work_tickets")
+    more = [k for k in ("priority", "category", "show", "assignee", "idle", "channel")
+            if params[k].strip()]
     return render(request, "index.html", {
         "tickets": tickets,
-        "stats": repo.dashboard_stats(conn, viewer),
         "follow_ups": repo.due_follow_ups(conn, viewer),
+        "more_filters": len(more) + (1 if filters["overdue_only"] else 0),
+        "is_default": current == views.normalize(""),
         "categories": repo.all_categories(conn),
         "groups": groups.selectable(conn, user),
-        "filters": {"status": status, "priority": pri, "category": category,
-                    "channel": channel, "q": q, "sort": sort, "overdue": overdue_only,
-                    "show": show},
+        "people": assignment.choices(conn, user) if works else [],
+        "viewing": presence.viewing(conn, user["id"]),
+        "chips": _view_chips(conn, user, current),
+        "current_query": current,
+        "notice": notice, "error": error, "can_bulk": works,
+        "filters": {"status": status, "priority": filters["priority"], "category": category,
+                    "channel": channel, "q": q, "sort": sort,
+                    "overdue": filters["overdue_only"], "show": show.strip(),
+                    "assignee": assignee.strip(), "idle": idle.strip()},
     })
+
+
+# ---------------------------------------------------------------- saved views
+
+@router.post("/views", **Redirect, summary="Save the ticket list's filters as a view")
+def save_view(form: Annotated[ViewSave, Form()], conn: DB, user: CurrentUser):
+    """Personal to you. Saving under a name you already use replaces that view."""
+    try:
+        views.save(conn, user["id"], form.name, form.query)
+    except ValueError as exc:
+        return see_other(_list_url(form.query, error=str(exc)))
+    return see_other(_list_url(form.query))
+
+
+@router.post("/views/{view_id}/delete", **Redirect, summary="Delete one of your views")
+def delete_view(view_id: int, conn: DB, user: CurrentUser):
+    views.delete(conn, user["id"], view_id)
+    return see_other("/")
+
+
+# ---------------------------------------------------------------- bulk actions
+
+@router.post("/tickets/bulk", **Redirect, summary="Apply one action to many tickets")
+def bulk(form: Annotated[BulkAction, Form()], conn: DB, user: Worker):
+    """`action` picks which of the other fields is used: `status`, `assignee`
+    (`me`, `none` or a user id), `group` (`none` or a group id) or `tag`.
+
+    Each ticket is checked on its own, exactly as if the action were done on its
+    page: tickets you can't see, people a ticket can't be assigned to, and
+    sharing changes on tickets you don't own (unless you're an admin) are
+    skipped and counted rather than failing the whole batch."""
+    def done(**message: str) -> RedirectResponse:
+        return see_other(_list_url(form.back, **message))
+
+    if not form.ids:
+        return done(error="Tick at least one ticket first.")
+    target_user = target_group = None
+    if form.action == "status" and form.status is None:
+        return done(error="Choose a status to set.")
+    if form.action == "assign":
+        choice = form.assignee.strip()
+        if choice not in ("me", "none") and not choice.isdigit():
+            return done(error="Choose who to assign them to.")
+        target_user = user["id"] if choice == "me" else int(choice) if choice.isdigit() else None
+    if form.action == "group":
+        choice = form.group.strip()
+        if choice != "none" and not choice.isdigit():
+            return done(error="Choose a group, or Only the owner.")
+        target_group = int(choice) if choice.isdigit() else None
+        _check_group(conn, user, target_group)
+    tag = form.tag.strip()
+    if form.action == "tag" and not tag:
+        return done(error="Type the tag to add.")
+
+    changed = skipped = 0
+    for ticket_id in list(dict.fromkeys(form.ids))[:500]:
+        ticket = repo.get_ticket(conn, ticket_id)
+        if (ticket is None or ticket["deleted_at"]
+                or not auth.can_view_ticket(conn, user, ticket)):
+            skipped += 1
+            continue
+        if form.action == "status":
+            repo.set_status(conn, ticket_id, form.status)
+        elif form.action == "assign":
+            if not assignment.can_assign_to(conn, ticket, target_user, by=user):
+                skipped += 1
+                continue
+            assignment.set_assignee(conn, ticket_id, target_user)
+        elif form.action == "group":
+            if not _can_regroup(user, ticket):
+                skipped += 1
+                continue
+            repo.set_group(conn, ticket_id, target_group)
+        else:
+            repo.add_tag(conn, ticket_id, tag)
+        changed += 1
+
+    message = f"{changed} ticket{'' if changed == 1 else 's'} updated"
+    if skipped:
+        message += f"; {skipped} skipped (not yours to change, or that person can't see it)"
+    return done(notice=message)
 
 
 # ---------------------------------------------------------------- create
@@ -68,6 +214,7 @@ def new_ticket_form(request: Request, conn: DB, user: Worker):
     return render(request, "ticket_new.html", {
         "categories": repo.all_categories(conn),
         "groups": groups.selectable(conn, user),
+        "people": assignment.picker(conn, user),
         "default_group": mine[0]["id"] if len(mine) == 1 else None})
 
 
@@ -82,11 +229,17 @@ def new_ticket(form: Annotated[TicketCreate, Form()], conn: DB, user: Worker,
                background: BackgroundTasks):
     """The creator owns the ticket. The customer is matched on email, or created.
     `group_id` shares it with that group's members; leave it out to keep the
-    ticket to yourself.
+    ticket to yourself. `assignee_id` hands it to someone straight away (same
+    rules as the ticket page's Assigned to).
 
     If root has turned on new-ticket emails, digest subscribers are notified
     after the response is sent, so a slow mail server never delays the page."""
     _check_group(conn, user, form.group_id)
+    if not assignment.can_assign_to(conn, {"owner_id": user["id"], "group_id": form.group_id},
+                                    form.assignee_id, by=user):
+        raise Forbidden("That person isn't in the group you chose, so they wouldn't be able "
+                        "to see the ticket. Share it with their group, or leave it unassigned.",
+                        back="/tickets/new")
     ticket_id = repo.create_ticket(
         conn, subject=form.subject, body=form.body or None,
         customer_email=form.customer_email or None, customer_name=form.customer_name or None,
@@ -97,6 +250,8 @@ def new_ticket(form: Annotated[TicketCreate, Form()], conn: DB, user: Worker,
         due_at=to_utc(form.due_at, end_of_day=True),
         tags=[t.strip() for t in form.tags.split(",") if t.strip()],
         owner_id=user["id"], group_id=form.group_id)
+    if form.assignee_id:
+        assignment.set_assignee(conn, ticket_id, form.assignee_id)
     background.add_task(digest.notify_new_ticket, ticket_id)
     return _back(ticket_id)
 
@@ -135,6 +290,9 @@ def ticket_detail(request: Request, ticket: ViewableTicket, conn: DB, user: Curr
         "history": history, "drafted": drafted,
         "groups": groups.selectable(conn, user),
         "can_regroup": _can_regroup(user, ticket),
+        "assignable": assignment.assignable(conn, ticket, by=user),
+        "loaded_at": utcnow(),
+        "check_in_seconds": presence.CHECK_IN_SECONDS,
     })
 
 
@@ -172,6 +330,47 @@ def change_group(ticket: WorkableTicket, form: Annotated[GroupChange, Form()], c
     _check_group(conn, user, form.group_id)
     repo.set_group(conn, ticket["id"], form.group_id)
     return _back(ticket["id"])
+
+
+@router.post("/tickets/{ticket_id}/assign", **Redirect, summary="Assign or unassign")
+def assign(ticket: WorkableTicket, form: Annotated[AssigneeChange, Form()], conn: DB,
+           user: Worker):
+    """Anyone who can work the ticket may hand it to anyone who can see it: its
+    owner, its group's members, or an admin. Admins may hand it to anyone.
+    Blank `assignee_id` = nobody."""
+    if form.assignee_id == ticket["assignee_id"]:
+        return _back(ticket["id"])          # e.g. Save pressed without a change
+    if not assignment.can_assign_to(conn, ticket, form.assignee_id, by=user):
+        raise Forbidden("That person can't see this ticket, so it can't be assigned to "
+                        "them. Share it with their group first.",
+                        back=f"/tickets/{ticket['id']}")
+    assignment.set_assignee(conn, ticket["id"], form.assignee_id)
+    return _back(ticket["id"])
+
+
+# ---------------------------------------------------------------- presence
+
+@router.post("/tickets/{ticket_id}/presence", response_model=PresenceOut,
+             summary="Check in from an open ticket page")
+def presence_check_in(ticket: ViewableTicket, form: Annotated[PresenceCheckIn, Form()],
+                      conn: DB, user: CurrentUser):
+    """Called by the ticket page about every 20 seconds while it's visible.
+    Records you as on this ticket (and as writing, if your reply box has
+    something in it) and answers with who else is on it, and who else has
+    added to its timeline since you loaded the page. Root's check-ins aren't
+    recorded: root can't change tickets, so it can't collide with anyone."""
+    if auth.can(user, "work_tickets"):
+        presence.check_in(conn, ticket["id"], user["id"], form.writing)
+    return {"others": presence.others(conn, ticket["id"], user["id"]),
+            "changed_by": presence.changed_by(conn, ticket["id"], user["id"], form.since)}
+
+
+@router.post("/tickets/{ticket_id}/presence/leave", status_code=204,
+             summary="Left the ticket page")
+def presence_leave(ticket: ViewableTicket, conn: DB, user: CurrentUser):
+    """Sent as the page closes, so others' warnings clear straight away."""
+    presence.leave(conn, ticket["id"], user["id"])
+    return Response(status_code=204)
 
 
 @router.post("/tickets/{ticket_id}/note", **Redirect, summary="Add a private note")

@@ -120,11 +120,11 @@ Caddy) and set `HELPDESK_SECURE_COOKIES=true`.
 
 | | Sees tickets | Works tickets | Trash | Accounts |
 |---|---|---|---|---|
-| **User** | Their own, plus their groups' | Yes | No | No |
+| **User** | Their own, ones assigned to them, and their groups' | Yes | No | No |
 | **Admin** | All | Yes | Queue deletions, restore | No |
 | **Root** | All (read-only, audited) | No | Restore, delete permanently | Yes, and groups |
 
-A ticket belongs to whoever created it. The customer directory is shared by
+A ticket belongs to whoever created it (*logged by*). The customer directory is shared by
 everyone. Root creates accounts with a temporary password, and the user picks their
 own at first sign-in. Password resets also go through root; an account's optional
 email address is only used for the digest below.
@@ -142,9 +142,40 @@ A group is a team, set up by root under **Groups**. Someone can be in several.
   can't take it out of the group.
 - **Older tickets:** tickets filed before a group existed stay private until their
   owner shares them, or root presses **Share their tickets** next to a member.
-- **The list:** a *Whose tickets* filter narrows it to *Mine only* or one group.
+- **The list:** a filter narrows it to *Logged by me* or one group.
 - Removing someone from a group ends their access to its tickets (except their
-  own). Deleting a group keeps its tickets and makes them private again.
+  own, and any assigned to them). Deleting a group keeps its tickets and makes them
+  private again.
+
+### Assignment
+
+Who *logged* a ticket and who is *working* it are separate. Set it in the
+**People** panel on a ticket (it saves as soon as you pick), or **Assign to me**;
+the new-ticket form has the same *Assigned to* choice.
+
+- A user can assign a ticket to anyone who can already see it: its owner, its
+  group's members, or an admin. The new-ticket form only offers people who fit the
+  group chosen.
+- An admin can assign to anyone who works tickets; that person can then see it.
+- Never root, never a disabled account.
+- Anyone who can work the ticket can reassign it, so a team can pass work around.
+- The assignee can see the ticket even if it later leaves the group.
+- Deleting an account unassigns its tickets.
+
+### Working the list
+
+- **Views:** the tabs across the top (*All open*, *Needs action*, *Assigned to
+  me*, *Unassigned*, *Overdue*, *Untouched 3+ days*) show live counts. Search and
+  status are always visible; the rest is under **Filters**. **Save as view** keeps
+  the current tab, search and filters as your own tab; the × deletes it.
+- **Bulk actions:** tick tickets (shift-click ticks a range) and a bar appears to
+  set their status, assign them, share them with a group, or add a tag. Each ticket is
+  checked as if you'd done it on its page: anything you couldn't change there is
+  skipped and counted.
+- **"Someone else is here":** an open ticket page shows who else has it open, warns
+  when one of them has a reply in progress, and tells you when someone else has
+  changed the ticket since you opened it. The list marks tickets someone is viewing.
+  It's a warning, not a lock.
 
 ### Open-ticket digest
 
@@ -152,7 +183,7 @@ An email listing the tickets that are still open. Root sets up two kinds of
 recipient, and nobody is ever included because of their role:
 
 - **Subscribers** (**Email digest** page): individual accounts root adds. Each has
-  a scope root picks (*every open ticket*, *their own and their groups' tickets*, or
+  a scope root picks (*every open ticket*, *their own, assigned and groups' tickets*, or
   *only tickets they own*) and **their own schedule**.
 - **Group digests** (**Groups** page): switch one on for a group and every member
   with an email address gets that group's open tickets. People added to the group

@@ -1,5 +1,69 @@
 # Changelog
 
+## v3.4 — Team workflow
+
+Schema version 6 (applied automatically on start): `tickets.assignee_id` (the
+column was reserved since v1 and is reused if present), and new `saved_views` and
+`ticket_presence` tables. Existing tickets start unassigned; nobody loses access to
+anything.
+
+### Assignment
+- *Logged by* (the owner, who created the ticket) and *assigned to* (who is working
+  it) are now separate. Set it from the ticket's **People** panel (or **Assign to
+  me**), or straight away on the new-ticket form.
+- A user can give a ticket to anyone who can already see it: its owner, its group's
+  members, or an admin. An admin can give it to anyone who works tickets. Anyone who
+  can work it can reassign it. Every change is on the timeline.
+- Being assigned a ticket lets you see it, so a hand-off survives the ticket leaving
+  the group. Deleting an account unassigns its tickets.
+- The ticket list has an *Assigned* column and an assignee filter. Digest emails gain
+  an *Assigned* column, and the *team* scope includes tickets assigned to the person.
+
+### A simpler ticket list
+- The six stat cards are replaced by one row of **view tabs** with live counts:
+  *All open*, *Needs action*, *Assigned to me*, *Unassigned*, *Overdue*, *Untouched
+  3+ days*. Anyone can save the current filters as their own tab (up to 20).
+- Search, status and sort are always shown. Priority, category, group, assignee,
+  last activity and overdue sit under **Filters**, with a count of how many are set.
+  Filters apply as you pick them; there's no Apply button.
+- Follow-ups due are a slim banner instead of a panel.
+- Fewer columns: ref and details sit under the subject, and priority is only flagged
+  when it's P1/P2. Narrower screens (a portrait monitor, a half-width window) drop
+  *Active time*, then *Customer*, and phones get one card per ticket.
+- The "Resolved / 7d" figure moved off this page; it's still on root's dashboard.
+
+### Bulk actions
+Tick tickets on the list (shift-click for a range) and a bar appears to set status,
+assign, share with a group, or add a tag. Picking from a menu applies it straight away.
+Each ticket gets the same permission checks as its own page; the rest are skipped
+and counted in the confirmation.
+
+### Ticket page
+- **People** panel: *Assigned to* and *Shared with* together, saved as soon as you
+  pick.
+- "Paste a whole thread" folds into the correspondence panel.
+- Picking a saved reply loads it without a separate Load button.
+- The stylesheet URL now changes with each release, so nobody sees new pages with
+  old cached styles after an upgrade.
+
+### "Someone else is here"
+An open ticket page checks in every 20 seconds. It shows who else has the ticket
+open, warns when one of them has a reply in progress, and says when someone else has
+added to the ticket since you opened it. The ticket list marks tickets someone is
+viewing. Root's views are not shown to others.
+
+### Accessibility
+- Skip-to-content link and labelled navigation landmarks.
+- Labels on every filter, timeline and ticket-page field that only had a placeholder.
+- The lightest grey text now meets WCAG AA contrast.
+- The `n` and `/` shortcuts no longer fire with Ctrl/Alt/⌘, so Ctrl+N opens a
+  browser window again.
+- Overdue dates are announced as overdue, not just shown in red.
+
+### Wording
+"Owner" is shown as *Logged by*, and the list filter *Mine only* is now
+*Logged by me*, to keep it distinct from *Assigned to me*.
+
 ## v3.3 — Groups and per-person digest schedules
 
 Schema version 5 (applied automatically on start): new `user_groups` and

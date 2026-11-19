@@ -106,8 +106,17 @@ def current_user(request: Request):
     return getattr(request.state, "user", None)
 
 
+def _asset_version() -> str:
+    """A short hash of the stylesheet, appended to its URL. Browsers cache
+    /static/style.css; without this, an upgrade can show new pages with the old
+    styles until someone hard-refreshes."""
+    import hashlib
+    return hashlib.sha1((BASE / "static" / "style.css").read_bytes()).hexdigest()[:10]
+
+
 templates.env.filters.update(dt=fmt_dt, date=fmt_date, duration=fmt_duration,
                              relative=relative, date_input=date_input)
 templates.env.globals.update(config=config, live_seconds=repo.live_active_seconds,
                              is_overdue=repo.is_overdue, to_utc=to_utc, now_iso=now_iso,
-                             can=auth.can, current_user=current_user)
+                             can=auth.can, current_user=current_user,
+                             asset_version=_asset_version())

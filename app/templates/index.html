@@ -1,40 +1,52 @@
 {% extends "base.html" %}{% import "_macros.html" as m %}
 {% set nav='tickets' %}{% block title %}Tickets — Help Desk{% endblock %}
 {% block content %}
+{% set me = current_user(request) %}
 
-<div class="stats">
-  <a class="stat" href="/?status=actionable"><div class="n">{{ stats.actionable }}</div>
-    <div class="l">Needs action</div></a>
-  <a class="stat {{ 'alert' if stats.overdue }}" href="/?status=open&overdue=1">
-    <div class="n">{{ stats.overdue }}</div><div class="l">Overdue</div></a>
-  <a class="stat" href="/?status=waiting_customer">
-    <div class="n">{{ stats.counts.waiting_customer }}</div><div class="l">On customer</div></a>
-  <a class="stat" href="/?status=waiting_internal">
-    <div class="n">{{ stats.counts.waiting_internal }}</div><div class="l">On internal</div></a>
-  <a class="stat {{ 'alert' if stats.follow_ups }}" href="#followups">
-    <div class="n">{{ stats.follow_ups }}</div><div class="l">Follow-ups due</div></a>
-  <a class="stat good" href="/?status=resolved"><div class="n">{{ stats.resolved_week }}</div>
-    <div class="l">Resolved / 7d</div></a>
+<div class="pagehead">
+  <h1>Tickets</h1>
+  {% if can_bulk %}<a class="btn btn-p" href="/tickets/new">New ticket</a>{% endif %}
 </div>
 
+{% if notice %}<div class="ok" role="status">{{ notice }}</div>{% endif %}
+{% if error %}<div class="err" role="alert">{{ error }}</div>{% endif %}
+
+{# ---- views: one row of tabs, each with a live count ---- #}
+<nav class="tabs" aria-label="Views">
+  {% for c in chips %}
+  <span class="tab {{ 'on' if c.on }}">
+    <a href="/?{{ c.query }}" {% if c.on %}aria-current="page"{% endif %}>{{ c.name }}
+      {%- if c.count is not none %} <span class="n">{{ c.count }}</span>{% endif %}</a>
+    {%- if c.id %}<form method="post" action="/views/{{ c.id }}/delete"
+          data-confirm="Delete your view “{{ c.name }}”?"><button class="tab-x"
+          aria-label="Delete view {{ c.name }}" title="Delete this view">&times;</button></form>{% endif %}
+  </span>
+  {% endfor %}
+</nav>
+
 {% if follow_ups %}
-<div class="panel" id="followups"><div class="panel-h">Follow-ups due</div>
-<table><tbody>
-{% for f in follow_ups %}
-<tr><td style="width:104px"><a class="ref" href="/tickets/{{ f.id }}">{{ f.ref }}</a></td>
-  <td><a class="subj" href="/tickets/{{ f.id }}">{{ f.subject }}</a>
-    <span class="sub">{{ f.follow_up_note or 'No note' }} · due {{ f.follow_up_at | relative }}</span></td>
-  <td style="width:110px">
-    <form method="post" action="/tickets/{{ f.id }}/followup">
-      <input type="hidden" name="done" value="1">
-      <button class="btn btn-sm">Done</button></form></td></tr>
-{% endfor %}
-</tbody></table></div>
+<details class="callout" open>
+  <summary><strong>{{ follow_ups|length }} follow-up{{ 's' if follow_ups|length != 1 }} due</strong></summary>
+  <ul class="fu-list">
+  {% for f in follow_ups %}
+    <li><a class="ref" href="/tickets/{{ f.id }}">{{ f.ref }}</a>
+      <a href="/tickets/{{ f.id }}">{{ f.subject }}</a>
+      <span class="sub">{{ f.follow_up_note or 'No note' }} · due {{ f.follow_up_at | relative }}</span>
+      <form method="post" action="/tickets/{{ f.id }}/followup">
+        <input type="hidden" name="done" value="1">
+        <button class="linkbtn" aria-label="Mark the follow-up on {{ f.ref }} done">Mark done</button></form>
+    </li>
+  {% endfor %}
+  </ul>
+</details>
 {% endif %}
 
-<form class="filters" method="get">
-  <input type="search" name="q" value="{{ filters.q }}" placeholder="Search ref, subject, customer…">
-  <select name="status">
+{# ---- toolbar: search + status always visible, the rest behind Filters ---- #}
+<div class="toolbar">
+<form class="toolbar-form" method="get" role="search" aria-label="Filter tickets" id="filters">
+  <input type="search" name="q" value="{{ filters.q }}" aria-label="Search"
+         placeholder="Search ref, subject, customer…">
+  <select name="status" aria-label="Status" data-autosubmit>
     <option value="">All statuses</option>
     <option value="open" {{ 'selected' if filters.status=='open' }}>Open (any)</option>
     <option value="actionable" {{ 'selected' if filters.status=='actionable' }}>Needs action</option>
@@ -42,72 +54,200 @@
     <option value="{{ s }}" {{ 'selected' if filters.status==s }}>{{ config.STATUS_LABELS[s] }}</option>
     {% endfor %}
   </select>
-  <select name="priority"><option value="">Any priority</option>
-    {% for p in [1,2,3,4,5] %}
-    <option value="{{ p }}" {{ 'selected' if filters.priority==p }}>{{ config.PRIORITY_LABELS[p] }}</option>
-    {% endfor %}
+  <select name="sort" aria-label="Sort by" data-autosubmit>
+    <option value="priority" {{ 'selected' if filters.sort=='priority' }}>Sort: priority</option>
+    <option value="due" {{ 'selected' if filters.sort=='due' }}>Sort: due date</option>
+    <option value="newest" {{ 'selected' if filters.sort=='newest' }}>Sort: newest</option>
+    <option value="oldest" {{ 'selected' if filters.sort=='oldest' }}>Sort: oldest</option>
+    <option value="updated" {{ 'selected' if filters.sort=='updated' }}>Sort: last touched</option>
   </select>
-  <select name="category"><option value="">Any category</option>
-    {% for c in categories %}<option value="{{ c }}" {{ 'selected' if filters.category==c }}>{{ c }}</option>{% endfor %}
-  </select>
-  {% if groups %}
-  <select name="show" aria-label="Whose tickets">
-    <option value="">Everything I can see</option>
-    <option value="mine" {{ 'selected' if filters.show=='mine' }}>Mine only</option>
-    {% for g in groups %}
-    <option value="{{ g.id }}" {{ 'selected' if filters.show==g.id|string }}>Group: {{ g.name }}</option>
-    {% endfor %}
-  </select>
-  {% endif %}
-  <select name="sort">
-    <option value="priority" {{ 'selected' if filters.sort=='priority' }}>Priority</option>
-    <option value="due" {{ 'selected' if filters.sort=='due' }}>Due date</option>
-    <option value="newest" {{ 'selected' if filters.sort=='newest' }}>Newest</option>
-    <option value="oldest" {{ 'selected' if filters.sort=='oldest' }}>Oldest</option>
-    <option value="updated" {{ 'selected' if filters.sort=='updated' }}>Last touched</option>
-  </select>
-  {% if filters.overdue %}<input type="hidden" name="overdue" value="1">{% endif %}
-  <button class="btn">Apply</button>
-  <a class="btn" href="/">Reset</a>
-  <a class="btn btn-p right" href="/tickets/new">New ticket</a>
+  <details class="more pop-wrap">
+    <summary class="btn {{ 'btn-on' if more_filters }}">Filters{% if more_filters %} <span class="badge">{{ more_filters }}</span>{% endif %}</summary>
+    <div class="pop more-body">
+      <label>Priority
+        <select name="priority" data-autosubmit><option value="">Any</option>
+          {% for p in [1,2,3,4,5] %}
+          <option value="{{ p }}" {{ 'selected' if filters.priority==p }}>{{ config.PRIORITY_LABELS[p] }}</option>
+          {% endfor %}</select></label>
+      <label>Category
+        <select name="category" data-autosubmit><option value="">Any</option>
+          {% for c in categories %}<option value="{{ c }}" {{ 'selected' if filters.category==c }}>{{ c }}</option>{% endfor %}
+        </select></label>
+      {% if groups %}
+      <label>Logged by / group
+        <select name="show" data-autosubmit>
+          <option value="">Anyone I can see</option>
+          <option value="mine" {{ 'selected' if filters.show=='mine' }}>Logged by me</option>
+          {% for g in groups %}
+          <option value="{{ g.id }}" {{ 'selected' if filters.show==g.id|string }}>Group: {{ g.name }}</option>
+          {% endfor %}
+        </select></label>
+      {% endif %}
+      <label>Assigned to
+        <select name="assignee" data-autosubmit>
+          <option value="">Anyone</option>
+          {% if can_bulk %}<option value="me" {{ 'selected' if filters.assignee=='me' }}>Me</option>{% endif %}
+          <option value="none" {{ 'selected' if filters.assignee=='none' }}>Nobody yet</option>
+          {% for p in people if p.id != me.id %}
+          <option value="{{ p.id }}" {{ 'selected' if filters.assignee==p.id|string }}>{{ p.display_name or p.username }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Last activity
+        <select name="idle" data-autosubmit>
+          <option value="">Any time</option>
+          {% for d in [3, 7, 14] %}
+          <option value="{{ d }}" {{ 'selected' if filters.idle==d|string }}>{{ d }}+ days ago</option>
+          {% endfor %}
+        </select></label>
+      <label class="check"><input type="checkbox" name="overdue" value="1" data-autosubmit
+        {{ 'checked' if filters.overdue }}> Overdue only</label>
+    </div>
+  </details>
+  <button class="btn nojs">Apply</button>
+  {% if not is_default %}<a class="clear" href="/">Clear filters</a>{% endif %}
 </form>
+  <details class="saveview pop-wrap">
+    <summary class="linkish">Save as view</summary>
+    <div class="pop pop-right">
+      <form method="post" action="/views" class="row">
+        <input type="hidden" name="query" value="{{ current_query }}">
+        <input name="name" maxlength="40" required aria-label="Name for this view"
+               placeholder="e.g. My ADA tickets">
+        <button class="btn btn-sm btn-p">Save</button>
+      </form>
+      <p class="hint">Keeps the current tab, search and filters under a name. Only you see it.</p>
+    </div>
+  </details>
+</div>
+
+<form id="bulk" method="post" action="/tickets/bulk">
+<input type="hidden" name="back" value="{{ current_query }}">
+
+{% if can_bulk and tickets %}
+<div class="bulkbar" id="bulkbar" role="group" aria-label="Change the ticked tickets">
+  <strong class="bulkcount" id="bulkcount" aria-live="polite">0 ticked</strong>
+  <span class="bulkctl">
+    <select name="status" aria-label="Set status to" data-bulk="status">
+      <option value="">Set status…</option>
+      {% for s in config.STATUSES %}<option value="{{ s }}">{{ config.STATUS_LABELS[s] }}</option>{% endfor %}
+    </select>
+    <button class="btn btn-sm nojs" name="action" value="status">Set</button>
+  </span>
+  <span class="bulkctl">
+    <select name="assignee" aria-label="Assign to" data-bulk="assign">
+      <option value="">Assign to…</option>
+      <option value="me">Me</option>
+      {% for p in people if p.id != me.id %}<option value="{{ p.id }}">{{ p.display_name or p.username }}</option>{% endfor %}
+      <option value="none">Nobody (unassign)</option>
+    </select>
+    <button class="btn btn-sm nojs" name="action" value="assign">Assign</button>
+  </span>
+  {% if groups %}
+  <span class="bulkctl">
+    <select name="group" aria-label="Share with" data-bulk="group">
+      <option value="">Share with…</option>
+      {% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+      <option value="none">Only the owner</option>
+    </select>
+    <button class="btn btn-sm nojs" name="action" value="group">Share</button>
+  </span>
+  {% endif %}
+  <span class="bulkctl">
+    <input name="tag" aria-label="Tag to add" placeholder="Add tag…" size="10">
+    <button class="btn btn-sm" name="action" value="tag">Add</button>
+  </span>
+  <button type="button" class="linkbtn" id="bulkclear">Untick all</button>
+</div>
+{% endif %}
 
 <div class="panel">
 {% if tickets %}
-<table>
+<table class="tickets">
+<caption class="sr-only">Tickets, {{ tickets|length }} shown</caption>
 <thead><tr>
-  <th style="width:104px">Ref</th><th>Subject</th><th style="width:180px">Customer</th>
-  <th style="width:120px">Status</th><th style="width:52px">Pri</th>
-  <th style="width:150px">Active time</th><th style="width:110px">Due</th>
+  {% if can_bulk %}<th scope="col" class="c-check"><input type="checkbox" id="checkall"
+      aria-label="Tick every ticket shown"></th>{% endif %}
+  <th scope="col">Ticket</th>
+  <th scope="col" class="c-cust">Customer</th>
+  <th scope="col" class="c-who">Assigned</th>
+  <th scope="col" class="c-status">Status</th>
+  <th scope="col" class="c-clock">Active time</th>
+  <th scope="col" class="c-due">Due</th>
 </tr></thead>
 <tbody>
 {% for t in tickets %}
+{% set late = is_overdue(t) %}
 <tr>
-  <td><a class="ref" href="/tickets/{{ t.id }}">{{ t.ref }}</a></td>
-  <td>
+  {% if can_bulk %}<td class="c-check"><input type="checkbox" name="ids" value="{{ t.id }}"
+      aria-label="Tick {{ t.ref }}"></td>{% endif %}
+  <td class="c-ticket">
     <a class="subj" href="/tickets/{{ t.id }}">{{ t.subject }}</a>
-    <span class="sub">{{ config.CHANNEL_LABELS.get(t.channel, t.channel) }}
-      {%- if t.category %} · {{ t.category }}{% endif %}
-      {%- if t.ada %} · <span class="badge-ada">ADA</span>{% endif %}
+    <span class="meta"><span class="ref">{{ t.ref }}</span>
+      {%- if t.ada %} <span class="badge-ada">ADA</span>{% endif %}
       {%- if t.group_name %} · {{ t.group_name }}{% endif %}
-      {%- if t.owner_id != current_user(request).id and t.owner_username %} · owner {{ t.owner_username }}{% endif %}</span>
+      {%- if t.category %} · {{ t.category }}{% endif %}
+      {%- if t.owner_id != me.id and t.owner_username %} · logged by {{ t.owner_username }}{% endif %}</span>
+    {% if viewing.get(t.id) %}<span class="viewing">{{ viewing[t.id] | join(', ') }} viewing now</span>{% endif %}
   </td>
-  <td>{% if t.customer_name %}{{ t.customer_name }}<br>{% endif %}
-    <span class="sub mono">{{ t.customer_email or '—' }}</span></td>
-  <td>{{ m.status_pill(t.status) }}</td>
-  <td>{{ m.prio_pill(t.priority) }}</td>
-  <td>{{ m.sla(t) }}</td>
-  <td class="mono nowrap {{ 'sub' if not is_overdue(t) }}"
-      style="{{ 'color:var(--red);font-weight:600' if is_overdue(t) }}">
-    {{ t.due_at | date if t.due_at else '—' }}</td>
+  <td class="c-cust">{{ t.customer_name or '' }}
+    {%- if t.customer_email %}<span class="sub mono block">{{ t.customer_email }}</span>{% endif %}
+    {%- if not t.customer_name and not t.customer_email %}<span class="sub">—</span>{% endif %}</td>
+  <td class="c-who">{% if t.assignee_id %}{{ 'You' if t.assignee_id == me.id else t.assignee_name }}
+      {%- else %}<span class="sub">—</span><span class="sr-only">Unassigned</span>{% endif %}</td>
+  <td class="c-status">{{ m.status_pill(t.status) }}{% if t.priority <= 2 %} {{ m.prio_pill(t.priority) }}{% endif %}</td>
+  <td class="c-clock">{{ m.sla(t) }}</td>
+  <td class="c-due mono nowrap {{ 'late' if late else 'sub' }}">
+    {{ t.due_at | date if t.due_at else '—' }}{% if late %}<span class="sr-only"> (overdue)</span>{% endif %}</td>
 </tr>
 {% endfor %}
 </tbody></table>
 {% else %}
-<div class="empty"><h3>No tickets match these filters</h3>
-  <p>Clear the filters, or log the one you're working on now.</p>
-  <a class="btn btn-p" href="/tickets/new">New ticket</a></div>
+<div class="empty"><h3>Nothing here</h3>
+  <p>{% if is_default %}No open tickets you can see.{% else %}No tickets match. <a href="/">Clear the filters</a>.{% endif %}</p>
+</div>
 {% endif %}
 </div>
-{% if tickets %}<p class="hint">{{ tickets|length }} shown · press <strong>n</strong> for a new ticket, <strong>/</strong> to search</p>{% endif %}
+</form>
+{% if tickets %}<p class="hint">{{ tickets|length }} shown · <kbd>n</kbd> new ticket · <kbd>/</kbd> search</p>{% endif %}
+
+<script>
+(() => {
+  const form = document.getElementById('bulk');
+  const bar = document.getElementById('bulkbar');
+  if (!form || !bar) return;
+  const boxes = [...form.querySelectorAll('input[name=ids]')];
+  const all = document.getElementById('checkall');
+  const count = document.getElementById('bulkcount');
+  let lastIndex = null;
+  const update = () => {
+    const n = boxes.filter(b => b.checked).length;
+    count.textContent = `${n} ticked`;
+    bar.classList.toggle('active', n > 0);
+    boxes.forEach(b => b.closest('tr').classList.toggle('ticked', b.checked));
+    if (all) { all.checked = n > 0 && n === boxes.length; all.indeterminate = n > 0 && n < boxes.length; }
+  };
+  if (all) all.addEventListener('change', () => { boxes.forEach(b => { b.checked = all.checked; }); update(); });
+  // Shift-click ticks everything between this box and the last one clicked.
+  boxes.forEach((b, i) => b.addEventListener('click', e => {
+    if (e.shiftKey && lastIndex !== null) {
+      const [lo, hi] = [Math.min(i, lastIndex), Math.max(i, lastIndex)];
+      boxes.slice(lo, hi + 1).forEach(x => { x.checked = b.checked; });
+    }
+    lastIndex = i; update();
+  }));
+  document.getElementById('bulkclear').addEventListener('click', () => {
+    boxes.forEach(b => { b.checked = false; }); update();
+  });
+  // Choosing from a menu applies it straight away.
+  bar.querySelectorAll('select[data-bulk]').forEach(sel => sel.addEventListener('change', () => {
+    if (sel.value) form.requestSubmit(bar.querySelector(`button[value=${sel.dataset.bulk}]`));
+  }));
+  // Enter in the tag box means "Add tag", not some other button in the form.
+  const tag = form.querySelector('input[name=tag]');
+  tag.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); form.requestSubmit(bar.querySelector('button[value=tag]')); }
+  });
+  update();
+})();
+</script>
 {% endblock %}

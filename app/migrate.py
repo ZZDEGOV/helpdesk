@@ -146,6 +146,32 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             mark = (SELECT value FROM meta WHERE key = 'digest_mark')
            WHERE mark IS NULL AND days = ''""",
     ]),
+    (6, [
+        # --- assignment -------------------------------------------------------
+        # Who is working a ticket, separate from who logged it (owner_id). The
+        # column was reserved in the v1 schema, so most databases already have
+        # it (unused, all NULL); _execute skips the ALTER when it exists.
+        "ALTER TABLE tickets ADD COLUMN assignee_id INTEGER"
+        " REFERENCES users(id) ON DELETE SET NULL",
+        "UPDATE tickets SET assignee_id = NULL"
+        " WHERE assignee_id IS NOT NULL AND assignee_id NOT IN (SELECT id FROM users)",
+        "CREATE INDEX IF NOT EXISTS idx_tickets_assignee ON tickets(assignee_id)",
+        # --- saved views: a person's named ticket-list filters -----------------
+        """CREATE TABLE IF NOT EXISTS saved_views (
+            id         INTEGER PRIMARY KEY,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name       TEXT NOT NULL COLLATE NOCASE,
+            query      TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE (user_id, name))""",
+        # --- presence: who has a ticket open right now (collision warning) ------
+        """CREATE TABLE IF NOT EXISTS ticket_presence (
+            ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            seen_at   TEXT NOT NULL,
+            typing_at TEXT,
+            PRIMARY KEY (ticket_id, user_id))""",
+    ]),
 ]
 
 # Migration 3 also rebuilds the tickets table to drop its CHECK constraints.

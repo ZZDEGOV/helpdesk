@@ -55,6 +55,7 @@ class TicketCreate(BaseModel):
     due_at: LocalDate = Field(None, description="Target date; the deadline is end of work day")
     tags: str = Field("", description="Comma separated")
     group_id: OptionalId = Field(None, description="Share with this group; blank = only you")
+    assignee_id: OptionalId = Field(None, description="Who will work it; blank = nobody yet")
 
 
 class TicketUpdate(BaseModel):
@@ -74,6 +75,47 @@ class StatusChange(BaseModel):
 
 class GroupChange(BaseModel):
     group_id: OptionalId = Field(None, description="Blank = private to the owner")
+
+
+class AssigneeChange(BaseModel):
+    assignee_id: OptionalId = Field(None, description="Blank = nobody")
+
+
+BulkActionKind = Literal["status", "assign", "group", "tag"]
+
+
+class BulkAction(BaseModel):
+    """One action applied to many tickets from the ticket list. Tickets the
+    person can't see, or the action can't apply to, are skipped and counted."""
+    ids: list[int] = Field(default_factory=list, description="Ticket ids")
+    action: BulkActionKind
+    status: Annotated[Status | None, Blankable] = None
+    assignee: str = Field("", description="`me`, `none`, or a user id")
+    group: str = Field("", description="`none` (private to each owner) or a group id")
+    tag: str = ""
+    back: str = Field("", description="The ticket list's query string, to return to")
+
+
+class ViewSave(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    query: str = Field("", description="The ticket list's query string")
+
+
+class PresenceCheckIn(BaseModel):
+    writing: bool = Field(False, description="Their reply box has something in it")
+    since: str = Field("", description="When the page was loaded (UTC ISO), to report "
+                                       "changes made by others after that")
+
+
+class PresenceOther(BaseModel):
+    name: str
+    writing: bool
+
+
+class PresenceOut(BaseModel):
+    others: list[PresenceOther] = Field(description="Everyone else on the ticket right now")
+    changed_by: str | None = Field(
+        None, description="Someone else who added to the timeline since `since`")
 
 
 class MessageCreate(BaseModel):
@@ -175,7 +217,7 @@ class Schedule(BaseModel):
 
 class DigestSubscriberSettings(Schedule):
     scope: DigestScope = Field("all", description="all = every open ticket; team = their "
-                               "own and their groups'; own = theirs only")
+                               "own, assigned and groups'; own = theirs only")
 
 
 class DigestSubscribe(DigestSubscriberSettings):
@@ -221,6 +263,8 @@ class TicketSummary(_Row):
     customer_name: str | None
     customer_email: str | None
     owner_username: str | None = None
+    assignee_id: int | None = None
+    assignee_username: str | None = None
     received_at: datetime
     due_at: datetime | None
     overdue: bool

@@ -1,6 +1,7 @@
 :root {
   --paper:#F4F6F8; --surface:#fff; --surface-2:#FAFBFC;
-  --ink:#141B26; --ink-2:#5A6675; --ink-3:#8A94A3;
+  /* ink-3 was #8A94A3 (3.0:1 on white); #667180 passes WCAG AA for small text */
+  --ink:#141B26; --ink-2:#5A6675; --ink-3:#667180;
   --rule:#DCE1E8; --rule-2:#EDF0F4;
   --signal:#14559B; --signal-soft:#E7EEF7;
   --amber:#8A5A00; --amber-soft:#FBF0DC;
@@ -24,7 +25,7 @@ a:hover{text-decoration:underline}
   padding:0 20px;height:46px;position:sticky;top:0;z-index:20}
 .brand{font-family:var(--mono);font-weight:600;font-size:13px;letter-spacing:.14em;
   text-transform:uppercase;color:#fff}
-.brand span{color:var(--ink-3)}
+.brand span{color:#8A94A3}
 .nav{display:flex;gap:2px;margin-left:auto;align-items:center}
 .nav a,.nav button{color:#B9C2CE;font-size:13px;padding:6px 11px;border-radius:var(--r);
   background:none;border:0;cursor:pointer;font-family:var(--sans)}
@@ -52,8 +53,8 @@ a:hover{text-decoration:underline}
   align-items:center;gap:10px;font-size:11px;text-transform:uppercase;
   letter-spacing:.09em;color:var(--ink-2);font-weight:600}
 .panel-b{padding:14px}
-.grid{display:grid;grid-template-columns:1fr 340px;gap:16px;align-items:start}
-@media(max-width:1000px){.grid{grid-template-columns:1fr}}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+@media(max-width:860px){.grid{grid-template-columns:1fr}}
 
 /* ---------- filters ---------- */
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
@@ -105,7 +106,7 @@ tbody tr:last-child td{border-bottom:0}
 .s-closed{background:var(--slate-soft);color:var(--slate)}
 .p1,.p2{background:var(--red-soft);color:var(--red)}
 .p3{background:var(--slate-soft);color:var(--slate)}
-.p4,.p5{background:var(--slate-soft);color:var(--ink-3)}
+.p4,.p5{background:var(--slate-soft);color:var(--ink-2)}
 .tag{display:inline-block;background:var(--slate-soft);color:var(--ink-2);
   padding:2px 8px;border-radius:20px;font-size:11px;margin:0 4px 4px 0}
 .tag form{display:inline}
@@ -226,3 +227,139 @@ input.tiny{font-size:11px;padding:2px 5px;width:118px}
 /* v2.1 */
 tr.voidrow td{opacity:.55}
 tr.voidrow td:first-child{border-left:2px solid var(--red)}
+
+/* v3.4: accessibility */
+html{scroll-padding-top:60px}                 /* focused fields aren't hidden under the sticky bar */
+main:focus{outline:none}
+.skip{position:absolute;left:12px;top:-60px;z-index:50;background:var(--surface);
+  color:var(--signal);padding:8px 12px;border-radius:var(--r);font-weight:600;
+  box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.skip:focus{top:10px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0}
+kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--rule);border-bottom-width:2px;
+  border-radius:3px;padding:0 4px;background:var(--surface)}
+.ok{background:var(--green-soft);color:var(--green);padding:8px 11px;border-radius:var(--r);
+  font-size:13px;margin-bottom:13px}
+
+/* v3.4: shared bits */
+.js .nojs{display:none}                      /* Apply/Save buttons only needed without JS */
+.pagehead{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.pagehead h1{margin:0}
+.pagehead .btn{margin-left:auto}
+.badge{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:var(--signal);
+  color:#fff;font-size:11px;font-weight:600;text-align:center;line-height:18px}
+.btn-on{border-color:var(--signal);color:var(--signal)}
+.linkish{color:var(--signal);cursor:pointer;font-size:13px}
+.block{display:block}
+summary{cursor:pointer}
+.pop-wrap{position:relative}
+.pop-wrap>summary{list-style:none}
+.pop-wrap>summary::-webkit-details-marker{display:none}
+.pop{position:absolute;z-index:30;top:calc(100% + 6px);left:0;min-width:260px;background:var(--surface);
+  border:1px solid var(--rule);border-radius:var(--r);box-shadow:0 8px 24px rgba(20,27,38,.12);
+  padding:12px}
+.pop-right{left:auto;right:0}
+
+/* v3.4: ticket list -- tabs */
+.tabs{display:flex;flex-wrap:wrap;gap:2px;border-bottom:1px solid var(--rule);margin-bottom:12px}
+.tab{display:inline-flex;align-items:center;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab a{color:var(--ink-2);padding:7px 10px;font-size:13px;font-weight:500;white-space:nowrap}
+.tab a:hover{color:var(--ink);text-decoration:none}
+.tab .n{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-left:3px}
+.tab.on{border-bottom-color:var(--signal)}
+.tab.on a{color:var(--signal)}
+.tab.on .n{color:var(--signal)}
+.tab form{display:inline}
+.tab-x{background:none;border:0;cursor:pointer;color:var(--ink-3);font-size:14px;line-height:1;
+  padding:2px 6px 2px 0}
+.tab-x:hover{color:var(--red)}
+
+/* follow-ups due: a slim callout instead of a full panel */
+.callout{background:var(--amber-soft);border:1px solid #EBD3A6;border-radius:var(--r);
+  padding:8px 12px;margin-bottom:12px;font-size:13px}
+.callout summary{color:var(--amber)}
+.fu-list{list-style:none;margin:6px 0 0;padding:0}
+.fu-list li{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;padding:4px 0;
+  border-top:1px solid #EFE0C2}
+.fu-list form{margin-left:auto}
+
+/* toolbar */
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.toolbar-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;flex:1;min-width:0}
+.toolbar-form input[type=search]{flex:1 1 220px;min-width:160px;max-width:360px}
+.toolbar-form select{max-width:190px}
+.toolbar .clear{font-size:13px}
+.more-body{display:grid;gap:10px;min-width:280px}
+.more-body label{display:grid;gap:3px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--ink-2);font-weight:600}
+.more-body select{max-width:none;width:100%;text-transform:none;letter-spacing:0;font-weight:400}
+.more-body label.check{display:flex;gap:7px;align-items:center;text-transform:none;letter-spacing:0;
+  font-size:13px;font-weight:400;color:var(--ink)}
+.saveview .pop{min-width:300px}
+.saveview .pop input[name=name]{flex:1}
+
+/* bulk actions: only there once something is ticked */
+.bulkbar{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:7px 12px;
+  margin-bottom:10px;border:1px solid var(--signal);border-radius:var(--r);background:var(--signal-soft);
+  position:sticky;top:52px;z-index:10}
+.js .bulkbar:not(.active){display:none}
+.bulkcount{font-size:13px;color:var(--signal);margin-right:4px}
+.bulkctl{display:inline-flex;gap:4px;align-items:center}
+.bulkbar select,.bulkbar input{font-size:12px;padding:4px 7px}
+.bulkbar .linkbtn{margin-left:auto}
+
+/* the table */
+table.tickets td{vertical-align:middle}
+td input[type=checkbox],th input[type=checkbox]{width:16px;height:16px;margin:0;cursor:pointer;
+  vertical-align:middle}
+.c-check{width:34px;padding-right:0}
+.c-cust{width:190px}
+.c-who{width:130px}
+.c-status{width:150px;white-space:nowrap}
+.c-clock{width:140px}
+.c-due{width:100px}
+.c-ticket .subj{margin-bottom:1px}
+.meta{display:block;font-size:12px;color:var(--ink-2)}
+.meta .ref{font-size:11px}
+td.late{color:var(--red);font-weight:600}
+tr.ticked td{background:var(--signal-soft)}
+
+/* Narrower screens (a portrait monitor, a half-width window): drop the least
+   important columns rather than squeezing every one. */
+@media (max-width:1180px){ .c-clock{display:none} }
+@media (max-width:960px){ .c-cust{display:none} .wrap{padding:14px} }
+@media (max-width:700px){
+  table.tickets thead{display:none}
+  table.tickets tr{display:grid;grid-template-columns:28px 1fr auto;gap:2px 8px;padding:10px 12px;
+    border-bottom:1px solid var(--rule-2)}
+  table.tickets td{display:block;padding:0;border:0}
+  table.tickets .c-check{grid-row:span 3}
+  table.tickets .c-ticket{grid-column:2 / 4}
+  table.tickets .c-who,table.tickets .c-status,table.tickets .c-due{width:auto;font-size:12px}
+  table.tickets .c-due{grid-column:3}
+  .toolbar-form select{max-width:none}
+}
+
+/* topbar wraps rather than overflowing on narrow screens */
+@media (max-width:900px){
+  .topbar{flex-wrap:wrap;height:auto;padding:6px 14px;gap:6px 18px}
+  .nav{margin-left:0;flex-wrap:wrap}
+}
+
+/* ticket page */
+.inline-more{margin-top:12px;font-size:13px}
+.inline-more summary{color:var(--signal)}
+.inline-more form{margin-top:8px}
+.people .person-row{margin-bottom:12px}
+.people .person-row>div{font-size:14px}
+.people .take{padding:4px 0 0;font-size:12px;color:var(--signal)}
+
+/* v3.4: assignment and presence */
+.viewing{display:inline-block;margin-top:3px;font-size:11px;font-weight:600;color:var(--amber);
+  background:var(--amber-soft);border-radius:20px;padding:1px 8px}
+.presence{border-left:3px solid var(--signal);background:var(--signal-soft);color:var(--ink);
+  padding:8px 12px;border-radius:0 var(--r) var(--r) 0;font-size:13px;margin-bottom:14px}
+.presence.warn{border-left-color:var(--amber);background:var(--amber-soft)}
+.presence div+div{margin-top:3px}
+.tl li.t-assigned .dot{background:var(--signal);box-shadow:0 0 0 1px var(--signal)}

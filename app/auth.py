@@ -42,8 +42,9 @@ def verify_password(password: str, stored_hash: str | None, salt: str | None) ->
 #            window) and can restore from the trash.
 #   root  -- deletes immediately and permanently, from its own admin area.
 #
-# Ticket visibility: users see the tickets they own and the tickets filed under
-# a group they belong to; admin and root see all (view_all_tickets).
+# Ticket visibility: users see the tickets they own or are assigned, and the
+# tickets filed under a group they belong to; admin and root see all
+# (view_all_tickets).
 #
 CAPABILITIES: dict[str, set[str]] = {
     "root": {"manage_users", "delete_users", "hard_delete", "view_trash",
@@ -65,7 +66,8 @@ def can_view_ticket(conn, user, ticket) -> bool:
     """The single-ticket form of repo._visible -- change them together."""
     if ticket is None or not can(user, "view_tickets"):
         return False
-    if can(user, "view_all_tickets") or ticket["owner_id"] == user["id"]:
+    if can(user, "view_all_tickets") or user["id"] in (ticket["owner_id"],
+                                                        ticket["assignee_id"]):
         return True
     if ticket["group_id"] is None:
         return False
@@ -178,6 +180,11 @@ def delete_user(conn, user_id: int, reassign_to: int | None = None) -> dict:
                          (user_id,)).fetchone()["c"]
     conn.execute("UPDATE tickets SET owner_id = ? WHERE owner_id = ?",
                  (reassign_to, user_id))
+    # Explicit rather than trusting ON DELETE SET NULL / CASCADE, which an older
+    # tickets table may lack. Their assigned work goes back to "nobody yet".
+    conn.execute("UPDATE tickets SET assignee_id = NULL WHERE assignee_id = ?", (user_id,))
+    conn.execute("DELETE FROM saved_views WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM ticket_presence WHERE user_id = ?", (user_id,))
     conn.execute("UPDATE users SET created_by = NULL WHERE created_by = ?", (user_id,))
     conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM users WHERE id = ?", (user_id,))

@@ -57,8 +57,8 @@ def env() -> dict[str, TestClient]:
     """A fresh database with root, an admin (ZachZ) and a user (mreed) signed in."""
     migrate(verbose=False)
     with connect() as conn:
-        for table in ("sessions", "audit_log", "events", "tickets", "customers", "users",
-                      "user_groups"):
+        for table in ("ticket_presence", "saved_views", "sessions", "audit_log", "events",
+                      "tickets", "customers", "users", "user_groups"):
             conn.execute(f"DELETE FROM {table}")
         conn.execute("DELETE FROM meta WHERE key LIKE 'digest_%'")
         conn.commit()

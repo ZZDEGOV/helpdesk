@@ -4,17 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{% block title %}Help Desk{% endblock %}</title>
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+<script>document.documentElement.classList.add('js')</script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 {% if config.ENV != 'production' %}
-<div style="background:#8A5A00;color:#fff;text-align:center;padding:5px 10px;font-size:12px;font-weight:600;letter-spacing:.06em">
+<div role="note" style="background:#8A5A00;color:#fff;text-align:center;padding:5px 10px;font-size:12px;font-weight:600;letter-spacing:.06em">
   {{ config.ENV | upper }} — a test copy. Changes here are thrown away and no email is sent.</div>
 {% endif %}
 <header class="topbar">
   <a class="brand" href="/">HELP<span>DESK</span></a>
   {% set me = current_user(request) %}
-  <nav class="nav">
+  <nav class="nav" aria-label="Main">
     {% if me %}
       {% if me.role == 'root' %}
         <a href="/root" class="{{ 'on' if nav=='root' }}">Root</a>
@@ -36,8 +38,9 @@
     {% endif %}
   </nav>
 </header>
-<main class="wrap">{% block content %}{% endblock %}</main>
+<main class="wrap" id="main" tabindex="-1">{% block content %}{% endblock %}</main>
 <script>
+document.querySelectorAll('.nav a.on').forEach(a => a.setAttribute('aria-current', 'page'));
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-copy]');
   if (!b) return;
@@ -48,12 +51,30 @@ document.addEventListener('click', e => {
     setTimeout(() => { b.textContent = old; b.classList.remove('copied'); }, 1400);
   });
 });
+// Selects and boxes marked data-autosubmit save as soon as they change, so
+// there's no separate Save/Apply button to find (it's shown without JS).
+document.addEventListener('change', e => {
+  if (e.target.matches('[data-autosubmit]')) e.target.form.requestSubmit();
+});
+// Drop-downs built from <details>: close on a click elsewhere or on Escape.
+document.addEventListener('click', e => {
+  document.querySelectorAll('details.pop-wrap[open]').forEach(d => {
+    if (!d.contains(e.target)) d.open = false;
+  });
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.querySelectorAll('details.pop-wrap[open]').forEach(d => {
+    d.open = false; d.querySelector('summary').focus();
+  });
+});
 document.addEventListener('submit', e => {
   const f = e.target.closest('[data-confirm]');
   if (f && !confirm(f.dataset.confirm)) e.preventDefault();
 });
 document.addEventListener('keydown', e => {
-  if (e.target.matches('input,textarea,select')) return;
+  // Single-key shortcuts only: Ctrl+N etc. belong to the browser.
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target.matches('input,textarea,select,button,summary') || e.target.isContentEditable) return;
   if (e.key === 'n') { e.preventDefault(); location.href = '/tickets/new'; }
   if (e.key === '/') { e.preventDefault();
     const s = document.querySelector('input[type=search]'); if (s) s.focus(); }

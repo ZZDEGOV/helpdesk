@@ -43,17 +43,25 @@
   </div>
 
   <div>
-    {% if groups %}
-    <div class="panel"><div class="panel-h">Shared with</div><div class="panel-b">
-      <div class="field" style="margin-bottom:0">
-        <select id="group_id" name="group_id" aria-label="Shared with">
-          <option value="">Only me</option>
+    <div class="panel"><div class="panel-h">People</div><div class="panel-b">
+      {% if groups %}
+      <div class="field"><label class="f" for="group_id">Shared with</label>
+        <select id="group_id" name="group_id">
+          <option value="">Nobody else (private)</option>
           {% for g in groups %}
           <option value="{{ g.id }}" {{ 'selected' if g.id==default_group }}>{{ g.name }}</option>
           {% endfor %}</select>
-        <p class="hint">Everyone in the group can see and work the ticket. Admins always can.</p></div>
+        <p class="hint">Everyone in the group can see and work it. Admins always can.</p></div>
+      {% endif %}
+      <div class="field" style="margin-bottom:0"><label class="f" for="assignee_id">Assigned to</label>
+        <select id="assignee_id" name="assignee_id">
+          <option value="">Nobody yet</option>
+          {% for p in people %}
+          <option value="{{ p.id }}" data-groups="{{ p.groups | join(',') }}"
+                  {% if p.always %}data-always{% endif %}>{{ p.name }}{{ ' (me)' if p.id == current_user(request).id }}</option>
+          {% endfor %}</select>
+        <p class="hint" id="assignee-hint">Leave as nobody to let the team pick it up.</p></div>
     </div></div>
-    {% endif %}
     <div class="panel"><div class="panel-h">Classification</div><div class="panel-b">
       <div class="field"><label class="f" for="channel">Channel</label>
         <select id="channel" name="channel">
@@ -82,4 +90,24 @@
   </div>
 </div>
 </form>
+<script>
+// Offer only people who'd be able to see the ticket in the group chosen. The
+// server checks the same rule, so this is a convenience, not the guard.
+(() => {
+  const group = document.getElementById('group_id');
+  const who = document.getElementById('assignee_id');
+  if (!group || !who) return;
+  const sync = () => {
+    for (const opt of who.options) {
+      if (!opt.value) continue;
+      const fits = opt.hasAttribute('data-always') ||
+                   (group.value && opt.dataset.groups.split(',').includes(group.value));
+      opt.hidden = opt.disabled = !fits;
+      if (!fits && opt.selected) who.value = '';
+    }
+  };
+  group.addEventListener('change', sync);
+  sync();
+})();
+</script>
 {% endblock %}

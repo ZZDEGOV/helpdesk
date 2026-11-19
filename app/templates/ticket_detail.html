@@ -5,12 +5,17 @@
 <div class="row" style="margin-bottom:14px">
   <div><h1>{{ t.subject }}</h1>
     <span class="sub mono">{{ t.ref }}{% if t.external_ref %} · COM {{ t.external_ref }}{% endif %}
-      · opened {{ t.received_at | relative }}</span></div>
+      · opened {{ t.received_at | relative }}
+      · {{ 'assigned to ' ~ t.assignee_name if t.assignee_id else 'unassigned' }}
+      {%- if t.group_name %} · {{ t.group_name }}{% endif %}</span></div>
   <div class="right row">{{ m.status_pill(t.status) }} {{ m.prio_pill(t.priority) }}
     {% if t.ada %}<span class="badge-ada">ADA</span>{% endif %}</div>
 </div>
 
-{% set readonly = current_user(request) and current_user(request).role == 'root' %}
+<div id="presence" class="presence" role="status" aria-live="polite" hidden></div>
+
+{% set me = current_user(request) %}
+{% set readonly = me and me.role == 'root' %}
 {% if readonly %}<div class="err" style="margin-bottom:14px">Read-only — the root
   account can view tickets but not change them. This view is recorded in the audit log.</div>{% endif %}
 
@@ -36,23 +41,24 @@
 
   {% if not readonly %}<div class="panel"><div class="panel-h">Log correspondence</div><div class="panel-b">
     <form method="get" class="row" style="margin-bottom:11px">
-      <select name="template_id" style="flex:1">
+      <select name="template_id" style="flex:1" aria-label="Saved reply" data-autosubmit>
         <option value="">Start from a saved reply…</option>
         {% for tpl in templates_list %}<option value="{{ tpl.id }}">{{ tpl.name }}</option>{% endfor %}
       </select>
-      <button class="btn btn-sm">Load</button>
+      <button class="btn btn-sm nojs">Load</button>
     </form>
     <form method="post" action="/tickets/{{ t.id }}/message">
       <div class="row" style="margin-bottom:8px">
-        <select name="kind" id="kindsel" style="flex:1">
+        <select name="kind" id="kindsel" style="flex:1" aria-label="Kind of entry">
           {% for key, (label, dirn, party) in config.MESSAGE_KINDS.items() %}
           <option value="{{ key }}" {{ 'selected' if key=='out_customer' }}>{{ label }}</option>
           {% endfor %}
         </select>
-        <input name="author" placeholder="Who (optional)" style="flex:1">
-        <input name="occurred_at" type="datetime-local" title="When it happened — leave blank for now">
+        <input name="author" placeholder="Who (optional)" aria-label="Who (optional)" style="flex:1">
+        <input name="occurred_at" type="datetime-local" aria-label="When it happened"
+               title="When it happened — leave blank for now">
       </div>
-      <textarea id="replybox" name="body" rows="9" required
+      <textarea id="replybox" name="body" rows="9" required aria-label="Message"
         placeholder="Paste or type the message.">{{ drafted }}</textarea>
       <div class="row" style="margin-top:9px">
         <button type="button" class="btn btn-sm" data-copy="#replybox">Copy</button>
@@ -62,14 +68,14 @@
         <button class="btn btn-p btn-sm right">Log entry</button>
       </div>
     </form>
-  </div></div>{% endif %}
-
-  {% if not readonly %}<div class="panel"><div class="panel-h">Paste a whole thread</div><div class="panel-b">
-    <form method="post" action="/tickets/{{ t.id }}/import">
-      <textarea name="raw" rows="4" required
-        placeholder="Paste an entire Outlook chain — it gets split into separate entries for you to review."></textarea>
-      <button class="btn btn-sm" style="margin-top:8px">Split into entries</button>
-    </form>
+    <details class="inline-more">
+      <summary>Or paste a whole Outlook thread</summary>
+      <form method="post" action="/tickets/{{ t.id }}/import">
+        <textarea name="raw" rows="4" required aria-label="Whole email thread"
+          placeholder="Paste the entire chain. It's split into separate entries for you to check before anything is saved."></textarea>
+        <button class="btn btn-sm" style="margin-top:8px">Split into entries</button>
+      </form>
+    </details>
   </div></div>{% endif %}
 
   <div class="panel"><div class="panel-h">Timeline</div><div class="panel-b">
@@ -90,11 +96,13 @@
             <form method="post" action="/events/{{ e.id }}/void" style="display:inline"
                   data-confirm="Strike this entry through? It stays visible.">
               <input type="hidden" name="ticket_id" value="{{ t.id }}">
-              <input name="reason" placeholder="reason (optional)" class="tiny">
+              <input name="reason" placeholder="reason (optional)" class="tiny"
+                     aria-label="Reason for striking this entry (optional)">
               <button class="linkbtn">strike</button></form>
             <form method="post" action="/events/{{ e.id }}/retime" style="display:inline">
               <input type="hidden" name="ticket_id" value="{{ t.id }}">
-              <input name="occurred_at" type="datetime-local" class="tiny">
+              <input name="occurred_at" type="datetime-local" class="tiny"
+                     aria-label="Correct time for this entry">
               <button class="linkbtn">set time</button></form>
           </div>
         {% endif %}
@@ -105,6 +113,57 @@
 </div>
 
 <div>
+  {% set assignable_ids = assignable | map(attribute='id') | list %}
+  <div class="panel"><div class="panel-h">People</div><div class="panel-b people">
+    {# Assigned to: changes save as soon as you pick (Save shows only without JS) #}
+    <div class="person-row">
+      <label class="f" for="assignee_id">Assigned to</label>
+      {% if readonly %}
+        <div>{{ t.assignee_name or 'Nobody yet' }}</div>
+      {% else %}
+      <form method="post" action="/tickets/{{ t.id }}/assign" class="row">
+        <select id="assignee_id" name="assignee_id" style="flex:1" data-autosubmit>
+          <option value="">Nobody yet</option>
+          {% for p in assignable %}
+          <option value="{{ p.id }}" {{ 'selected' if p.id == t.assignee_id }}>{{ p.display_name or p.username }}{{ ' (you)' if p.id == me.id }}</option>
+          {% endfor %}
+          {% if t.assignee_id and t.assignee_id not in assignable_ids %}
+          <option value="{{ t.assignee_id }}" selected>{{ t.assignee_name }}</option>
+          {% endif %}
+        </select>
+        <button class="btn btn-sm nojs">Save</button>
+      </form>
+      {% if t.assignee_id != me.id and me.id in assignable_ids %}
+      <form method="post" action="/tickets/{{ t.id }}/assign">
+        <input type="hidden" name="assignee_id" value="{{ me.id }}">
+        <button class="linkbtn take">Assign to me</button>
+      </form>
+      {% endif %}
+      {% endif %}
+    </div>
+
+    <div class="person-row">
+      <label class="f" for="group_id">Shared with</label>
+      {% if can_regroup and groups %}
+      <form method="post" action="/tickets/{{ t.id }}/group" class="row">
+        <select id="group_id" name="group_id" style="flex:1" data-autosubmit>
+          <option value="">Nobody else (private)</option>
+          {% for g in groups %}
+          <option value="{{ g.id }}" {{ 'selected' if g.id==t.group_id }}>{{ g.name }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-sm nojs">Save</button>
+      </form>
+      {% else %}
+        <div>{{ t.group_name or 'Nobody else (private)' }}</div>
+      {% endif %}
+    </div>
+
+    <p class="hint">Logged by {{ t.owner_username or '—' }}.
+      {%- if t.group_id %} Everyone in {{ t.group_name }} can see and work it.
+      {%- else %} Only {{ t.owner_username or 'the owner' }}{{ ', the assignee' if t.assignee_id }} and admins can see it.{% endif %}</p>
+  </div></div>
+
   <div class="panel"><div class="panel-h">Customer</div><div class="panel-b">
     {% if t.customer_id %}
       <dl class="kv">
@@ -162,25 +221,6 @@
     </form>
   </div></div>
 
-  <div class="panel"><div class="panel-h">Shared with</div><div class="panel-b">
-    <dl class="kv">
-      <dt>Owner</dt><dd>{{ t.owner_username or '—' }}</dd>
-      <dt>Group</dt><dd>{{ t.group_name or 'None — only the owner and admins see this' }}</dd>
-    </dl>
-    {% if can_regroup and groups %}
-    <form method="post" action="/tickets/{{ t.id }}/group" class="row" style="margin-top:11px">
-      <select name="group_id" style="flex:1">
-        <option value="">Only the owner</option>
-        {% for g in groups %}
-        <option value="{{ g.id }}" {{ 'selected' if g.id==t.group_id }}>{{ g.name }}</option>
-        {% endfor %}
-      </select>
-      <button class="btn btn-sm">Save</button>
-    </form>
-    <p class="hint">Everyone in the chosen group can see and work this ticket.</p>
-    {% endif %}
-  </div></div>
-
   <div class="panel"><div class="panel-h">Open questions
     {% set unanswered = questions | rejectattr('answered_at') | list %}
     {% if unanswered %}<span class="right pill s-waiting_customer">{{ unanswered|length }} waiting</span>{% endif %}
@@ -197,7 +237,7 @@
       {% else %}
         <form method="post" action="/questions/{{ q.id }}/answer" class="row">
           <input type="hidden" name="ticket_id" value="{{ t.id }}">
-          <input name="answer" placeholder="Their answer" style="flex:1">
+          <input name="answer" placeholder="Their answer" aria-label="Their answer" style="flex:1">
           <button class="btn btn-sm">Save</button></form>
       {% endif %}
       <form method="post" action="/questions/{{ q.id }}/delete" style="display:inline">
@@ -206,7 +246,8 @@
     </div>
     {% else %}<p class="sub">Nothing outstanding.</p>{% endfor %}
     <form method="post" action="/tickets/{{ t.id }}/questions/add" class="row" style="margin-top:9px">
-      <input name="text" placeholder="What did you ask?" style="flex:1" required>
+      <input name="text" placeholder="What did you ask?" aria-label="Question to track"
+             style="flex:1" required>
       <button class="btn btn-sm">Add</button>
     </form>
   </div></div>
@@ -220,8 +261,10 @@
         <button class="btn btn-sm">Mark done</button></form>
     {% else %}
       <form method="post" action="/tickets/{{ t.id }}/followup">
-        <div class="field"><input name="follow_up_at" type="datetime-local" required></div>
-        <div class="field"><input name="follow_up_note" placeholder="Nudge about what?"></div>
+        <div class="field"><input name="follow_up_at" type="datetime-local" required
+                                  aria-label="Remind me at"></div>
+        <div class="field"><input name="follow_up_note" placeholder="Nudge about what?"
+                                  aria-label="Reminder note"></div>
         <button class="btn btn-sm" style="width:100%">Set reminder</button>
       </form>
     {% endif %}
@@ -231,12 +274,13 @@
     <div style="margin-bottom:9px">
       {% for tag in tags %}
       <span class="tag">{{ tag }}<form method="post" action="/tickets/{{ t.id }}/tag">
-        <input type="hidden" name="remove" value="{{ tag }}"><button title="Remove">&times;</button>
+        <input type="hidden" name="remove" value="{{ tag }}"><button title="Remove"
+          aria-label="Remove tag {{ tag }}">&times;</button>
       </form></span>
       {% else %}<span class="sub">None yet.</span>{% endfor %}
     </div>
     <form method="post" action="/tickets/{{ t.id }}/tag" class="row">
-      <input name="tag" list="taglist" placeholder="Add tag" style="flex:1">
+      <input name="tag" list="taglist" placeholder="Add tag" aria-label="Tag to add" style="flex:1">
       <datalist id="taglist">{% for tg in all_tags %}<option value="{{ tg }}">{% endfor %}</datalist>
       <button class="btn btn-sm">Add</button>
     </form>
@@ -252,4 +296,58 @@
   </div></div>{% endif %}
 </div>
 </div>
+
+<script>
+// "Someone else is here": check in while this page is open and visible, and
+// show who else is on the ticket and whether they've changed it (presence.py).
+(() => {
+  const box = document.getElementById('presence');
+  const url = '/tickets/{{ t.id }}/presence';
+  const since = '{{ loaded_at }}';
+  const reply = document.getElementById('replybox');
+  let typedAt = 0, lastBeat = 0;
+
+  const esc = s => s.replace(/[&<>"']/g, c =>
+    ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+  const names = a => esc(a.length < 3 ? a.join(' and ')
+                                      : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]);
+  const writing = () => (reply && reply.value.trim() !== '') || Date.now() - typedAt < 30000;
+
+  function show(d) {
+    const writers = d.others.filter(o => o.writing).map(o => o.name);
+    const viewers = d.others.filter(o => !o.writing).map(o => o.name);
+    const lines = [];
+    if (writers.length) lines.push(`<strong>${names(writers)}</strong> ${writers.length > 1 ? 'are' : 'is'}
+      writing on this ticket right now. Check before you log a reply, so the customer doesn't get two.`);
+    if (viewers.length) lines.push(`${names(viewers)} ${viewers.length > 1 ? 'are' : 'is'} also viewing this ticket.`);
+    if (d.changed_by) lines.push(`<strong>${esc(d.changed_by)}</strong> has updated this ticket since you
+      opened it. <a href="">Reload</a> to see the change.`);
+    box.innerHTML = lines.map(l => `<div>${l}</div>`).join('');
+    box.hidden = !lines.length;
+    box.classList.toggle('warn', writers.length > 0 || !!d.changed_by);
+  }
+
+  async function beat() {
+    if (document.hidden) return;
+    lastBeat = Date.now();
+    const body = new URLSearchParams({since});
+    if (writing()) body.set('writing', '1');
+    try {
+      const r = await fetch(url, {method: 'POST', body, credentials: 'same-origin'});
+      if (r.ok && (r.headers.get('content-type') || '').includes('json')) show(await r.json());
+    } catch (e) { /* offline or signed out: try again next time */ }
+  }
+
+  // Starting to type tells the others promptly rather than up to 20s later.
+  document.addEventListener('input', e => {
+    if (!e.target.matches('textarea')) return;
+    typedAt = Date.now();
+    if (Date.now() - lastBeat > 5000) beat();
+  });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) beat(); });
+  addEventListener('pagehide', () => navigator.sendBeacon(url + '/leave'));
+  beat();
+  setInterval(beat, {{ check_in_seconds }} * 1000);
+})();
+</script>
 {% endblock %}

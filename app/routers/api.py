@@ -17,6 +17,7 @@ router = APIRouter(prefix="/api/v1", tags=["api"])
 def _summary(ticket) -> dict:
     data = dict(ticket)
     data.setdefault("owner_username", None)
+    data.setdefault("assignee_username", None)
     data["overdue"] = repo.is_overdue(ticket)
     data["active_seconds"] = repo.live_active_seconds(ticket)
     return data
@@ -39,8 +40,8 @@ def list_tickets(
     sort: Literal["priority", "due", "newest", "oldest", "updated"] = "priority",
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ):
-    """Users get the tickets they own and their groups' tickets; admins and root
-    get every ticket."""
+    """Users get the tickets they own or are assigned, and their groups'
+    tickets; admins and root get every ticket."""
     rows = repo.list_tickets(conn, status=status or None, q=q, customer_id=customer_id,
                              overdue_only=overdue, sort=sort, limit=limit,
                              viewer_id=viewer_id(user))

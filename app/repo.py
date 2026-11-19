@@ -38,15 +38,16 @@ ACTIVE_SQL = _status_sql(config.ACTIVE_STATUSES)
 
 def _visible(viewer_id: int | None, alias: str = "t.") -> tuple[str, list[Any]]:
     """SQL + params limiting tickets to what one non-admin can see: the tickets
-    they own, plus tickets in a group they belong to. None means no limit.
+    they own or are assigned, plus tickets in a group they belong to. None means
+    no limit.
 
     Every scoped query in this module goes through here, and auth.can_view_ticket
     applies the same rule to a single ticket -- change them together."""
     if viewer_id is None:
         return "", []
-    return (f" AND ({alias}owner_id = ? OR {alias}group_id IN"
+    return (f" AND ({alias}owner_id = ? OR {alias}assignee_id = ? OR {alias}group_id IN"
             " (SELECT group_id FROM group_members WHERE user_id = ?))",
-            [viewer_id, viewer_id])
+            [viewer_id, viewer_id, viewer_id])
 
 
 def next_ref(conn: sqlite3.Connection) -> str:
@@ -220,9 +221,12 @@ def get_ticket(conn, ticket_id: int) -> sqlite3.Row | None:
     return conn.execute(
         "SELECT t.*, c.email AS customer_email, c.name AS customer_name,"
         " c.phone AS customer_phone, c.account_id AS customer_account_id,"
-        " u.username AS owner_username, g.name AS group_name"
+        " u.username AS owner_username, g.name AS group_name,"
+        " a.username AS assignee_username,"
+        " COALESCE(NULLIF(a.display_name, ''), a.username) AS assignee_name"
         " FROM tickets t LEFT JOIN customers c ON c.id = t.customer_id"
         " LEFT JOIN users u ON u.id = t.owner_id"
+        " LEFT JOIN users a ON a.id = t.assignee_id"
         " LEFT JOIN user_groups g ON g.id = t.group_id"
         " WHERE t.id = ?", (ticket_id,)).fetchone()
 
@@ -232,22 +236,17 @@ def get_ticket_by_ref(conn, ref: str) -> sqlite3.Row | None:
     return get_ticket(conn, row["id"]) if row else None
 
 
-def list_tickets(conn, *, status: str | None = None, priority: int | None = None,
-                 category: str | None = None, channel: str | None = None,
-                 q: str | None = None, customer_id: int | None = None,
-                 overdue_only: bool = False, sort: str = "priority",
-                 limit: int = 500, include_deleted: bool = False,
-                 viewer_id: int | None = None, owner_id: int | None = None,
-                 group_id: int | None = None) -> list[sqlite3.Row]:
-    """viewer_id limits the list to what that person may see (their own tickets
-    and their groups') -- pass it for anyone who can't see all tickets (see
-    deps.viewer_id). owner_id and group_id are plain filters on top of that."""
-    sql = ("SELECT t.*, c.email AS customer_email, c.name AS customer_name,"
-           " u.username AS owner_username, g.name AS group_name"
-           " FROM tickets t LEFT JOIN customers c ON c.id = t.customer_id"
-           " LEFT JOIN users u ON u.id = t.owner_id"
-           " LEFT JOIN user_groups g ON g.id = t.group_id"
-           + (" WHERE 1=1" if include_deleted else " WHERE t.deleted_at IS NULL"))
+def _ticket_filters(*, status: str | None = None, priority: int | None = None,
+                    category: str | None = None, channel: str | None = None,
+                    q: str | None = None, customer_id: int | None = None,
+                    overdue_only: bool = False, include_deleted: bool = False,
+                    viewer_id: int | None = None, owner_id: int | None = None,
+                    group_id: int | None = None, assignee_id: int | None = None,
+                    unassigned: bool = False, idle_days: int | None = None,
+                    ) -> tuple[str, list[Any]]:
+    """The WHERE clause shared by list_tickets and count_tickets. Expects the
+    tickets table as `t` and customers as `c`."""
+    sql = " WHERE 1=1" if include_deleted else " WHERE t.deleted_at IS NULL"
     visible_sql, params = _visible(viewer_id)
     sql += visible_sql
 
@@ -257,6 +256,14 @@ def list_tickets(conn, *, status: str | None = None, priority: int | None = None
     if group_id is not None:
         sql += " AND t.group_id = ?"
         params.append(group_id)
+    if assignee_id is not None:
+        sql += " AND t.assignee_id = ?"
+        params.append(assignee_id)
+    if unassigned:
+        sql += " AND t.assignee_id IS NULL"
+    if idle_days:
+        sql += " AND t.updated_at < ?"
+        params.append((_now() - timedelta(days=idle_days)).isoformat(timespec="seconds"))
 
     if status == "open":
         sql += f" AND t.status IN {OPEN_SQL}"
@@ -286,6 +293,24 @@ def list_tickets(conn, *, status: str | None = None, priority: int | None = None
         sql += (" AND (t.subject LIKE ? OR t.body LIKE ? OR t.ref LIKE ?"
                 " OR c.email LIKE ? OR c.name LIKE ? OR t.external_ref LIKE ?)")
         params += [f"%{q}%"] * 6
+    return sql, params
+
+
+def list_tickets(conn, *, sort: str = "priority", limit: int = 500,
+                 **filters) -> list[sqlite3.Row]:
+    """Filters are _ticket_filters' keywords. viewer_id limits the list to what
+    that person may see (their own, assigned and group tickets) -- pass it for
+    anyone who can't see all tickets (see deps.viewer_id). The rest are plain
+    filters on top of that."""
+    where, params = _ticket_filters(**filters)
+    sql = ("SELECT t.*, c.email AS customer_email, c.name AS customer_name,"
+           " u.username AS owner_username, g.name AS group_name,"
+           " a.username AS assignee_username,"
+           " COALESCE(NULLIF(a.display_name, ''), a.username) AS assignee_name"
+           " FROM tickets t LEFT JOIN customers c ON c.id = t.customer_id"
+           " LEFT JOIN users u ON u.id = t.owner_id"
+           " LEFT JOIN users a ON a.id = t.assignee_id"
+           " LEFT JOIN user_groups g ON g.id = t.group_id" + where)
 
     orders = {
         "priority": " ORDER BY t.priority ASC, t.due_at IS NULL, t.due_at ASC",
@@ -297,6 +322,14 @@ def list_tickets(conn, *, status: str | None = None, priority: int | None = None
     sql += orders.get(sort, orders["priority"]) + " LIMIT ?"
     params.append(limit)
     return conn.execute(sql, params).fetchall()
+
+
+def count_tickets(conn, **filters) -> int:
+    """How many tickets list_tickets would return with no limit."""
+    where, params = _ticket_filters(**filters)
+    return conn.execute("SELECT COUNT(*) c FROM tickets t"
+                        " LEFT JOIN customers c ON c.id = t.customer_id" + where,
+                        params).fetchone()["c"]
 
 
 def set_status(conn, ticket_id: int, new_status: str, user_id: int | None = None) -> None:
